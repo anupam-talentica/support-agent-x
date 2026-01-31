@@ -195,17 +195,4 @@ def support_page():
 
 
 if __name__ == '__main__':
-    import subprocess
-    import sys
-    sys.exit(
-        subprocess.call(
-            [
-                sys.executable,
-                '-m',
-                'gunicorn',
-                '--bind',
-                '0.0.0.0:12000',
-                'ui.main:me',
-            ]
-        )
-    )
+    me.run(port=12000)

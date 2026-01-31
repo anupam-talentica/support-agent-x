@@ -64,6 +64,7 @@ class HostAgent:
         self, remote_agent_addresses: list[str]
     ) -> None:
         """Asynchronously initialize connections to remote agents."""
+        failed_connections = []
         async with httpx.AsyncClient(timeout=30) as client:
             for address in remote_agent_addresses:
                 card_resolver = A2ACardResolver(client, address)
@@ -76,13 +77,23 @@ class HostAgent:
                     self.cards[card.name] = card
                     logger.info(f'Connected to agent: {card.name} at {address}')
                 except httpx.ConnectError as e:
+                    failed_connections.append(address)
                     logger.error(
-                        f'ERROR: Failed to get agent card from {address}: {e}'
+                        f'ERROR: Failed to connect to agent at {address}: {e}. '
+                        f'Make sure the agent is running before starting the Host Agent.'
                     )
                 except Exception as e:
+                    failed_connections.append(address)
                     logger.error(
                         f'ERROR: Failed to initialize connection for {address}: {e}'
                     )
+
+        if failed_connections:
+            logger.warning(
+                f'WARNING: Failed to connect to {len(failed_connections)} agent(s). '
+                f'These agents will not be available: {failed_connections}. '
+                f'Available agents: {list(self.remote_agent_connections.keys())}'
+            )
 
         # Populate self.agents
         agent_info = []
@@ -187,7 +198,14 @@ class HostAgent:
             A dictionary of JSON data.
         """
         if agent_name not in self.remote_agent_connections:
-            raise ValueError(f'Agent {agent_name} not found')
+            available_agents = list(self.remote_agent_connections.keys())
+            error_msg = (
+                f'Agent "{agent_name}" not found. '
+                f'Available agents: {available_agents if available_agents else "none"}. '
+                f'Make sure the {agent_name} is running and accessible before starting the Host Agent.'
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
         
         state = tool_context.state
         state['active_agent'] = agent_name

@@ -5,26 +5,22 @@ description = "Collaborative multi-agent support system with RAG, memory, and gu
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    # Core A2A and ADK dependencies
     "a2a-sdk>=0.3.0",
     "google-adk[extensions]>=1.7.0",
-    "langchain>=0.3.0",
-    "langchain-google-genai>=2.1.5",
-    "langgraph>=0.4.5",
-    "chromadb>=0.5.0",
-    "sentence-transformers>=3.0.0",
-    "pypdf2>=3.0.0",
-    "python-docx>=1.1.0",
-    "python-pptx>=1.0.0",
-    "pillow>=10.0.0",
-    "pytesseract>=0.3.10",
+    # Database
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
     "psycopg2-binary>=2.9.9",
+    # Web server
     "uvicorn>=0.27.0",
     "gunicorn>=21.0.0",
     "fastapi>=0.109.0",
+    # UI
     "mesop>=0.1.0",
+    # HTTP client
     "httpx>=0.27.0",
+    # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.2.0",
 ]
@@ -36,6 +32,22 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
+]
+rag = [
+    # RAG dependencies for future RAG agent implementation
+    # Install with: pip install -e ".[rag]"
+    # Note: chromadb requires onnxruntime which may not be available for Python 3.14
+    # If installation fails, see INSTALLATION_NOTES.md for workarounds
+    "langchain>=0.3.0",
+    "langchain-google-genai>=2.1.5",
+    "langgraph>=0.4.5",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "pypdf2>=3.0.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
 ]
 
 [build-system]

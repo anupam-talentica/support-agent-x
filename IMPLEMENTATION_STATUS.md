@@ -1,5 +1,48 @@
 # Implementation Status
 
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    User[User/Support Analyst] --> UI[Mesop UI<br/>Port 12000]
+    UI -->|A2A Client| HostAgent[Host Agent<br/>Port 8083<br/>Orchestrator]
+    
+    HostAgent -->|A2A Protocol| IngestionAgent[Ingestion Agent<br/>Port 10001<br/>Ticket Normalization]
+    IngestionAgent -->|A2A Protocol| ResponseAgent[Response Agent<br/>Port 10007<br/>Response Synthesis]
+    
+    HostAgent -.->|Create Task| AppDB[(Application Database<br/>PostgreSQL<br/>Tickets, Sessions, Tasks)]
+    IngestionAgent -.->|Create Ticket| AppDB
+    ResponseAgent -.->|Update Task Status| AppDB
+    
+    ResponseAgent -->|Response| HostAgent
+    HostAgent -->|Final Response| UI
+    UI -->|Display| User
+    
+    style AppDB fill:#e1f5ff
+    style HostAgent fill:#fff4e1
+    style IngestionAgent fill:#e8f5e9
+    style ResponseAgent fill:#f3e5f5
+    style UI fill:#ffe0e0
+```
+
+### Current Implementation Flow
+
+1. **User submits ticket** via Mesop UI (port 12000)
+2. **UI sends request** to Host Agent (port 8083) via A2A client
+3. **Host Agent orchestrates** the flow:
+   - Routes to **Ingestion Agent** (port 10001) for ticket normalization
+   - Ingestion Agent creates ticket in PostgreSQL database
+   - Routes to **Response Agent** (port 10007) for response generation
+   - Response Agent updates task status in database
+4. **Response flows back** through Host Agent to UI
+5. **UI displays** the final response to the user
+
+### Database Integration
+
+- **Host Agent**: Creates task records in database
+- **Ingestion Agent**: Creates ticket records in database
+- **Response Agent**: Updates task status and output data in database
+
 ## ✅ Completed Tasks
 
 ### Task 1: Ingestion Agent

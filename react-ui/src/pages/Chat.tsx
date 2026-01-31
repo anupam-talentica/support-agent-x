@@ -61,6 +61,9 @@ Just type your question below.`;
   }, [messages]);
 
   const handleResetChat = () => {
+    // Reset conversation on the backend
+    chatService.startNewConversation();
+
     const welcomeMessage: Message = {
       id: Date.now().toString(),
       text: WELCOME_MESSAGE_TEXT,

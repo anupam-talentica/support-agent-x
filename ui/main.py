@@ -19,7 +19,7 @@ HOST_AGENT_URL = os.getenv('HOST_AGENT_URL', 'http://localhost:8083')
 @me.stateclass
 class AppState:
     """Application state"""
-    messages: list[dict] = []
+    messages: list[dict]
     loading: bool = False
 
 
@@ -191,6 +191,3 @@ def support_page():
                     )
                     me.text(msg['content'], style=me.Style(white_space='pre-wrap'))
 
-
-if __name__ == '__main__':
-    me.run(port=12000)

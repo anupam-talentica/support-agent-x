@@ -68,3 +68,6 @@ htmlcov/
 *.tmp
 *.bak
 *.swp
+
+data/chroma
+uv.lock

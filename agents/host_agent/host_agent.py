@@ -102,9 +102,9 @@ class HostAgent:
 
     def create_agent(self) -> Agent:
         """Create an instance of the HostAgent."""
-        gemini_model = os.getenv('LITELLM_MODEL', 'gemini-2.5-flash')
+        model = os.getenv('LITELLM_MODEL', 'openai/gpt-4.1-mini')
         return Agent(
-            model=gemini_model,
+            model=model,
             name='Host_agent',
             instruction=self.root_instruction,
             before_model_callback=self.before_model_callback,
@@ -139,6 +139,7 @@ class HostAgent:
         {self.agents}
 
         **Routing Flow:**
+        0. check if information is available in documents using the "rag agent"
         1. User submits ticket → Send to "Ingestion Agent"
         2. Ingestion Agent processes → Send result to "Response Agent"
         3. Response Agent generates response → Return to user

@@ -193,7 +193,7 @@ class MetricService:
             agent_name=agent_name,
             metric_type=metric_type,
             value=value,
-            metadata=metadata,
+            metric_metadata=metadata,
         )
         db.add(metric)
         db.commit()

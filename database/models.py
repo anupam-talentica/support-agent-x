@@ -171,7 +171,7 @@ class Metric(Base):
     metric_type = Column(String(100), nullable=False)  # 'latency', 'success_rate', 'error_rate', 'throughput'
     value = Column(JSON, nullable=False)  # Can store numeric or complex metrics
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    metadata = Column(JSON, nullable=True)  # Additional context
+    metric_metadata = Column('metadata', JSON, nullable=True)  # Additional context
 
     # Indexes
     __table_args__ = (

@@ -10,6 +10,8 @@ from a2a.client import A2ACardResolver, A2AClient
 from a2a.types import Message, Part, Role, SendMessageRequest, TextPart
 from dotenv import load_dotenv
 
+from dataclasses import field
+
 
 load_dotenv()
 
@@ -19,7 +21,7 @@ HOST_AGENT_URL = os.getenv('HOST_AGENT_URL', 'http://localhost:8083')
 @me.stateclass
 class AppState:
     """Application state"""
-    messages: list[dict] = []
+    messages: list[dict] = field(default_factory=list)
     loading: bool = False
 
 
@@ -127,30 +129,30 @@ def support_page():
     app_state = me.state(AppState)
     form_state = me.state(FormState)
     
-    with me.box(style=me.Style(padding=20, max_width=1200, margin='0 auto')):
-        me.text('Support Ticket System', style=me.Style(font_size=24, font_weight='bold', margin_bottom=20))
+    with me.box(style=me.Style(padding=me.Padding.all(20), max_width=1200,margin=me.Margin.symmetric(vertical=0, horizontal='auto'))):
+        me.text('Support Ticket System', style=me.Style(font_size=24, font_weight='bold', margin=me.Margin(bottom=20)))
         
         # Ticket form
         with me.box(style=me.Style(
-            border='1px solid #ccc',
-            padding=20,
-            margin_bottom=20,
+            border=me.Border.all(me.BorderSide(width=1, color='#ccc', style='solid')),
+            padding=me.Padding.all(20),
+            margin=me.Margin(bottom=20),
             border_radius=8,
         )):
-            me.text('Submit a Ticket', style=me.Style(font_size=18, font_weight='bold', margin_bottom=10))
+            me.text('Submit a Ticket', style=me.Style(font_size=18, font_weight='bold', margin=me.Margin(bottom=10)))
             
             me.input(
                 label='Title',
                 value=form_state.title,
                 on_input=lambda e: setattr(form_state, 'title', e.value),
-                style=me.Style(margin_bottom=10),
+                style=me.Style(margin=me.Margin(bottom=10)),
             )
             
             me.textarea(
                 label='Description',
                 value=form_state.description,
                 on_input=lambda e: setattr(form_state, 'description', e.value),
-                style=me.Style(margin_bottom=10, min_height=100),
+                style=me.Style(margin=me.Margin(bottom=10), min_height=100),
             )
             
             me.select(
@@ -164,7 +166,7 @@ def support_page():
                 ],
                 value=form_state.priority,
                 on_selection_change=lambda e: setattr(form_state, 'priority', e.selection),
-                style=me.Style(margin_bottom=10),
+                style=me.Style(margin=me.Margin(bottom=10)),
             )
             
             with me.content_button(
@@ -176,21 +178,34 @@ def support_page():
         
         # Messages
         if app_state.messages:
-            me.text('Responses', style=me.Style(font_size=18, font_weight='bold', margin_bottom=10))
+            me.text('Responses', style=me.Style(font_size=18, font_weight='bold', margin=me.Margin(bottom=10)))
             for msg in reversed(app_state.messages):
                 with me.box(style=me.Style(
-                    border='1px solid #ddd',
-                    padding=15,
-                    margin_bottom=10,
+                    border=me.Border.all(me.BorderSide(width=1, color='#ddd', style='solid')),
+                    padding=me.Padding.all(15),
+                    margin=me.Margin(bottom=10),
                     border_radius=8,
                     background='#f5f5f5' if msg['role'] == 'user' else '#e3f2fd',
                 )):
                     me.text(
                         f"{'You' if msg['role'] == 'user' else 'Agent'}:",
-                        style=me.Style(font_weight='bold', margin_bottom=5),
+                        style=me.Style(font_weight='bold', margin=me.Margin(bottom=5)),
                     )
                     me.text(msg['content'], style=me.Style(white_space='pre-wrap'))
 
 
 if __name__ == '__main__':
-    me.run(port=12000)
+    import subprocess
+    import sys
+    sys.exit(
+        subprocess.call(
+            [
+                sys.executable,
+                '-m',
+                'gunicorn',
+                '--bind',
+                '0.0.0.0:12000',
+                'ui.main:me',
+            ]
+        )
+    )

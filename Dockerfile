@@ -38,6 +38,7 @@ RUN uv pip install --system -r pyproject.toml || \
     alembic>=1.13.0 \
     psycopg2-binary>=2.9.9 \
     uvicorn>=0.27.0 \
+    gunicorn>=21.0.0 \
     fastapi>=0.109.0 \
     mesop>=0.1.0 \
     httpx>=0.27.0 \

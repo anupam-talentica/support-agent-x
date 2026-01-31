@@ -112,7 +112,7 @@ Answer based on the context above:"""
 def main():
     # Initialize RAG system
     rag = ChromaRAG(
-        host="localhost",
+        host="0.0.0.0",
         port=8000,
         collection_name="support-agent-x",
     )

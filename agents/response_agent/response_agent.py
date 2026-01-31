@@ -8,7 +8,7 @@ from google.adk.models.lite_llm import LiteLlm
 
 def create_response_agent() -> LlmAgent:
     """Constructs the ADK response synthesis agent."""
-    LITELLM_MODEL = os.getenv('LITELLM_MODEL', 'gemini-2.5-flash')
+    LITELLM_MODEL = "openai/gpt-4.1-mini"
     return LlmAgent(
         model=LiteLlm(model=LITELLM_MODEL),
         name='response_agent',

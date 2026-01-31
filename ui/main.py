@@ -8,6 +8,10 @@ import mesop as me
 
 from a2a.client import A2ACardResolver, A2AClient
 from a2a.types import Message, Part, Role, SendMessageRequest, TextPart
+
+from a2a.types import GetTaskRequest, TaskQueryParams
+import asyncio
+
 from dotenv import load_dotenv
 
 from dataclasses import field
@@ -67,20 +71,42 @@ async def send_ticket(title: str, description: str):
             # Get task updates
             if hasattr(response.root, 'result') and hasattr(response.root.result, 'id'):
                 task_id = response.root.result.id
-                async for update in a2a_client.get_task_updates(task_id):
-                    if update.root.type == 'task_artifact_update':
-                        if hasattr(update.root, 'artifact') and update.root.artifact:
-                            if hasattr(update.root.artifact, 'parts'):
-                                for part in update.root.artifact.parts:
-                                    if part.type == 'text':
-                                        state.messages.append({
-                                            'role': 'assistant',
-                                            'content': part.text,
-                                        })
-                                        yield
-                    elif update.root.type == 'task_status_update':
-                        if hasattr(update.root, 'status') and update.root.status == 'completed':
+                
+                # Poll for task completion
+                while True:
+                    get_request = GetTaskRequest(
+                        id=str(uuid.uuid4()),
+                        params=TaskQueryParams(id=task_id, historyLength=10)
+                    )
+                    task_response = await a2a_client.get_task(get_request)
+                    
+                    if hasattr(task_response.root, 'result'):
+                        current_task = task_response.root.result
+                        
+                        # Check for artifacts
+                        if hasattr(current_task, 'artifacts') and current_task.artifacts:
+                            for artifact in current_task.artifacts:
+                                if hasattr(artifact, 'parts'):
+                                    for part in artifact.parts:
+                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                            state.messages.append({
+                                                'role': 'assistant',
+                                                'content': part.root.text,
+                                            })
+                                            yield
+                        
+                        # Check if completed
+                        if current_task.status.state == 'completed':
                             break
+                        elif current_task.status.state in ['failed', 'canceled']:
+                            state.messages.append({
+                                'role': 'error',
+                                'content': f'Task {current_task.status.state}',
+                            })
+                            yield
+                            break
+                    
+                    await asyncio.sleep(0.5)
             
             # Add user message
             state.messages.insert(0, {

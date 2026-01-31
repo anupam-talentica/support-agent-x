@@ -3,10 +3,10 @@ name = "support-agents"
 version = "0.1.0"
 description = "Collaborative multi-agent support system with RAG, memory, and guardrails"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "a2a-sdk>=0.3.0",
-    "google-adk[extensions]>=1.7.0",
+    "google-adk[extensions,vertexai]>=1.7.0",
     "langchain>=0.3.0",
     "langchain-google-genai>=2.1.5",
     "langgraph>=0.4.5",

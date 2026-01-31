@@ -45,7 +45,9 @@ def _get_initialized_host_agent_sync():
         host_agent_instance = await HostAgent.create(
             remote_agent_addresses=[
                 os.getenv('INGESTION_AGENT_URL', 'http://localhost:10001'),
+                os.getenv('PLANNER_AGENT_URL', 'http://localhost:10002'),
                 os.getenv('RESPONSE_AGENT_URL', 'http://localhost:10007'),
+                os.getenv('RAG_AGENT_URL', 'http://localhost:10012'),
             ]
         )
         return host_agent_instance
@@ -67,15 +69,6 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
     """Start the Host Agent server with both A2A and REST API support."""
     
     # Verify an API key is set.
-    if os.getenv('GOOGLE_GENAI_USE_VERTEXAI') != 'TRUE' and not os.getenv(
-        'GOOGLE_API_KEY'
-    ):
-        raise ValueError(
-            'GOOGLE_API_KEY environment variable not set and '
-            'GOOGLE_GENAI_USE_VERTEXAI is not TRUE.'
-        )
-
-    # Define agent skill
     skill = AgentSkill(
         id='host_routing',
         name='Host Routing',

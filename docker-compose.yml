@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   postgres:
@@ -34,16 +34,16 @@ services:
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
       DB_ECHO: ${DB_ECHO:-False}
     ports:
-      - "8083:8083"  # Host agent
-      - "10001:10001"  # Ingestion agent
-      - "10002:10002"  # Planner agent
-      - "10003:10003"  # Intent agent
-      - "10004:10004"  # RAG agent
-      - "10005:10005"  # Memory agent
-      - "10006:10006"  # Reasoning agent
-      - "10007:10007"  # Response agent
-      - "10008:10008"  # Guardrails agent
-      - "12000:12000"  # UI
+      - "8083:8083" # Host agent
+      - "10001:10001" # Ingestion agent
+      - "10002:10002" # Planner agent
+      - "10003:10003" # Intent agent
+      - "10004:10004" # RAG agent
+      - "10005:10005" # Memory agent
+      - "10006:10006" # Reasoning agent
+      - "10007:10007" # Response agent
+      - "10008:10008" # Guardrails agent
+      - "12000:12000" # UI
     volumes:
       - ./data:/app/data
       - ./agents:/app/agents
@@ -58,7 +58,7 @@ services:
         sleep 5 &&
         python scripts/init_db.py --seed &&
         echo 'Database initialized. Starting application...' &&
-        python -m uvicorn ui.main:app --host 0.0.0.0 --port 12000
+        gunicorn --bind 0.0.0.0:12000 ui.main:me
       "
 
 volumes:

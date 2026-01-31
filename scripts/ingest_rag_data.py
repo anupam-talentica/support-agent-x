@@ -118,19 +118,21 @@ def main():
 
     # Sample documents to add
     sample_docs = [
-        "Python is a high-level programming language known for its simplicity and readability. It was created by Guido van Rossum and first released in 1991.",
-        "ChromaDB is an open-source embedding database designed for AI applications. It makes it easy to build LLM apps by storing and querying embeddings.",
-        "RAG (Retrieval Augmented Generation) is a technique that combines information retrieval with text generation. It helps LLMs provide more accurate and up-to-date responses.",
-        "Vector databases store data as high-dimensional vectors, enabling semantic search capabilities. They are essential for modern AI applications.",
-        "OpenAI's GPT models are large language models that can generate human-like text. They are trained on vast amounts of internet text data.",
+        # "Python is a high-level programming language known for its simplicity and readability. It was created by Guido van Rossum and first released in 1991.",
+        # "ChromaDB is an open-source embedding database designed for AI applications. It makes it easy to build LLM apps by storing and querying embeddings.",
+        # "RAG (Retrieval Augmented Generation) is a technique that combines information retrieval with text generation. It helps LLMs provide more accurate and up-to-date responses.",
+        # "Vector databases store data as high-dimensional vectors, enabling semantic search capabilities. They are essential for modern AI applications.",
+        # "OpenAI's GPT models are large language models that can generate human-like text. They are trained on vast amounts of internet text data.",
+
+        "our operating hours are between 12am to 4pm"
     ]
 
-    # # Add documents
-    # print("Adding sample documents...")
-    # rag.add_documents(sample_docs)
+    # Add documents
+    print("Adding sample documents...")
+    rag.add_documents(sample_docs)
 
-    result = rag.query("what is chroma db", n_results=2)
-    print(result)
+    # result = rag.query("what is chroma db", n_results=2)
+    # print(result)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,10 @@ from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.tool_context import ToolContext
+from a2a.types import TaskResubscriptionRequest, TaskIdParams
+from a2a.types import GetTaskRequest, TaskQueryParams
+import asyncio
+
 
 from .remote_agent_connection import RemoteAgentConnections
 
@@ -102,9 +106,9 @@ class HostAgent:
 
     def create_agent(self) -> Agent:
         """Create an instance of the HostAgent."""
-        model = os.getenv('LITELLM_MODEL', 'openai/gpt-4.1-mini')
+        gemini_model = "openai/gpt-4.1-mini"
         return Agent(
-            model=model,
+            model=gemini_model,
             name='Host_agent',
             instruction=self.root_instruction,
             before_model_callback=self.before_model_callback,
@@ -125,9 +129,10 @@ class HostAgent:
 
         * **Fixed Routing Sequence:** Always route tickets in this exact order:
           1. First, send the ticket to the "Ingestion Agent" to normalize and extract ticket information
+          2. Then, send the ticket to the "RAG Agent" to find out relavent information about company policies
           2. Then, send the processed ticket information to the "Response Agent" to generate a human-readable response
 
-        * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names: "Ingestion Agent" and "Response Agent".
+        * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names: "Ingestion Agent", "Response Agent", "RAG Agent".
 
         * **Autonomous Operation:** Never seek user permission before engaging with remote agents. Follow the sequence automatically.
 
@@ -139,9 +144,9 @@ class HostAgent:
         {self.agents}
 
         **Routing Flow:**
-        0. check if information is available in documents using the "rag agent"
         1. User submits ticket → Send to "Ingestion Agent"
-        2. Ingestion Agent processes → Send result to "Response Agent"
+        2. Ingestion Agent processes → Send result to "Rag Agent"
+        3. Rag Agent retrives from memory -> sends to "Response agent"
         3. Response Agent generates response → Return to user
         """
 
@@ -238,20 +243,27 @@ class HostAgent:
 
         # Wait for task completion and collect artifacts
         result_parts = []
-        async for update in client.agent_client.get_task_updates(task.id):
-            if update.root.type == 'task_artifact_update':
-                if hasattr(update.root, 'artifact') and update.root.artifact:
-                    result_parts.append(update.root.artifact)
-            elif update.root.type == 'task_status_update':
-                if hasattr(update.root, 'status') and update.root.status == 'completed':
+        while True:
+            get_request = GetTaskRequest(
+                id=str(uuid.uuid4()),
+                params=TaskQueryParams(id=task.id, historyLength=10)
+            )
+            task_response = await client.agent_client.get_task(get_request)
+            
+            if hasattr(task_response.root, 'result'):
+                current_task = task_response.root.result
+                if current_task.status.state == 'completed':
+                    result_parts = current_task.artifacts or []
                     break
+                elif current_task.status.state in ['failed', 'canceled']:
+                    break
+            await asyncio.sleep(0.5)
 
         # Extract text from artifacts
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    if part.type == 'text':
-                        result_text += part.text + '\n'
+                    result_text += part.root.text + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}

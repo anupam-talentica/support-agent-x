@@ -81,8 +81,8 @@ class HostExecutor(AgentExecutor):
                         try:
                             with get_db() as db:
                                 response_text = ''
-                                if parts and isinstance(parts[0].root, TextPart):
-                                    response_text = parts[0].root.text
+                                if parts and isinstance(parts[0], TextPart):
+                                    response_text = parts[0].text
                                 
                                 TaskService.update_task_status(
                                     db,

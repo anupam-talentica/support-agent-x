@@ -8,7 +8,13 @@ import mesop as me
 
 from a2a.client import A2ACardResolver, A2AClient
 from a2a.types import Message, Part, Role, SendMessageRequest, TextPart
+
+from a2a.types import GetTaskRequest, TaskQueryParams
+import asyncio
+
 from dotenv import load_dotenv
+
+from dataclasses import field
 
 
 load_dotenv()
@@ -19,7 +25,7 @@ HOST_AGENT_URL = os.getenv('HOST_AGENT_URL', 'http://localhost:8083')
 @me.stateclass
 class AppState:
     """Application state"""
-    messages: list[dict]
+    messages: list[dict] = field(default_factory=list)
     loading: bool = False
 
 
@@ -65,20 +71,42 @@ async def send_ticket(title: str, description: str):
             # Get task updates
             if hasattr(response.root, 'result') and hasattr(response.root.result, 'id'):
                 task_id = response.root.result.id
-                async for update in a2a_client.get_task_updates(task_id):
-                    if update.root.type == 'task_artifact_update':
-                        if hasattr(update.root, 'artifact') and update.root.artifact:
-                            if hasattr(update.root.artifact, 'parts'):
-                                for part in update.root.artifact.parts:
-                                    if part.type == 'text':
-                                        state.messages.append({
-                                            'role': 'assistant',
-                                            'content': part.text,
-                                        })
-                                        yield
-                    elif update.root.type == 'task_status_update':
-                        if hasattr(update.root, 'status') and update.root.status == 'completed':
+                
+                # Poll for task completion
+                while True:
+                    get_request = GetTaskRequest(
+                        id=str(uuid.uuid4()),
+                        params=TaskQueryParams(id=task_id, historyLength=10)
+                    )
+                    task_response = await a2a_client.get_task(get_request)
+                    
+                    if hasattr(task_response.root, 'result'):
+                        current_task = task_response.root.result
+                        
+                        # Check for artifacts
+                        if hasattr(current_task, 'artifacts') and current_task.artifacts:
+                            for artifact in current_task.artifacts:
+                                if hasattr(artifact, 'parts'):
+                                    for part in artifact.parts:
+                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                            state.messages.append({
+                                                'role': 'assistant',
+                                                'content': part.root.text,
+                                            })
+                                            yield
+                        
+                        # Check if completed
+                        if current_task.status.state == 'completed':
                             break
+                        elif current_task.status.state in ['failed', 'canceled']:
+                            state.messages.append({
+                                'role': 'error',
+                                'content': f'Task {current_task.status.state}',
+                            })
+                            yield
+                            break
+                    
+                    await asyncio.sleep(0.5)
             
             # Add user message
             state.messages.insert(0, {
@@ -127,30 +155,30 @@ def support_page():
     app_state = me.state(AppState)
     form_state = me.state(FormState)
     
-    with me.box(style=me.Style(padding=20, max_width=1200, margin='0 auto')):
-        me.text('Support Ticket System', style=me.Style(font_size=24, font_weight='bold', margin_bottom=20))
+    with me.box(style=me.Style(padding=me.Padding.all(20), max_width=1200,margin=me.Margin.symmetric(vertical=0, horizontal='auto'))):
+        me.text('Support Ticket System', style=me.Style(font_size=24, font_weight='bold', margin=me.Margin(bottom=20)))
         
         # Ticket form
         with me.box(style=me.Style(
-            border='1px solid #ccc',
-            padding=20,
-            margin_bottom=20,
+            border=me.Border.all(me.BorderSide(width=1, color='#ccc', style='solid')),
+            padding=me.Padding.all(20),
+            margin=me.Margin(bottom=20),
             border_radius=8,
         )):
-            me.text('Submit a Ticket', style=me.Style(font_size=18, font_weight='bold', margin_bottom=10))
+            me.text('Submit a Ticket', style=me.Style(font_size=18, font_weight='bold', margin=me.Margin(bottom=10)))
             
             me.input(
                 label='Title',
                 value=form_state.title,
                 on_input=lambda e: setattr(form_state, 'title', e.value),
-                style=me.Style(margin_bottom=10),
+                style=me.Style(margin=me.Margin(bottom=10)),
             )
             
             me.textarea(
                 label='Description',
                 value=form_state.description,
                 on_input=lambda e: setattr(form_state, 'description', e.value),
-                style=me.Style(margin_bottom=10, min_height=100),
+                style=me.Style(margin=me.Margin(bottom=10), min_height=100),
             )
             
             me.select(
@@ -164,7 +192,7 @@ def support_page():
                 ],
                 value=form_state.priority,
                 on_selection_change=lambda e: setattr(form_state, 'priority', e.selection),
-                style=me.Style(margin_bottom=10),
+                style=me.Style(margin=me.Margin(bottom=10)),
             )
             
             with me.content_button(
@@ -176,18 +204,34 @@ def support_page():
         
         # Messages
         if app_state.messages:
-            me.text('Responses', style=me.Style(font_size=18, font_weight='bold', margin_bottom=10))
+            me.text('Responses', style=me.Style(font_size=18, font_weight='bold', margin=me.Margin(bottom=10)))
             for msg in reversed(app_state.messages):
                 with me.box(style=me.Style(
-                    border='1px solid #ddd',
-                    padding=15,
-                    margin_bottom=10,
+                    border=me.Border.all(me.BorderSide(width=1, color='#ddd', style='solid')),
+                    padding=me.Padding.all(15),
+                    margin=me.Margin(bottom=10),
                     border_radius=8,
                     background='#f5f5f5' if msg['role'] == 'user' else '#e3f2fd',
                 )):
                     me.text(
                         f"{'You' if msg['role'] == 'user' else 'Agent'}:",
-                        style=me.Style(font_weight='bold', margin_bottom=5),
+                        style=me.Style(font_weight='bold', margin=me.Margin(bottom=5)),
                     )
                     me.text(msg['content'], style=me.Style(white_space='pre-wrap'))
 
+
+if __name__ == '__main__':
+    import subprocess
+    import sys
+    sys.exit(
+        subprocess.call(
+            [
+                sys.executable,
+                '-m',
+                'gunicorn',
+                '--bind',
+                '0.0.0.0:12000',
+                'ui.main:me',
+            ]
+        )
+    )

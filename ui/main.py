@@ -36,8 +36,8 @@ async def send_ticket(title: str, description: str):
     yield
     
     try:
-        # Get agent card
-        async with httpx.AsyncClient(timeout=30) as client:
+        # Get agent card (long timeout: host runs full pipeline before responding)
+        async with httpx.AsyncClient(timeout=120) as client:
             card_resolver = A2ACardResolver(client, HOST_AGENT_URL)
             agent_card = await card_resolver.get_agent_card()
             
@@ -68,45 +68,61 @@ async def send_ticket(title: str, description: str):
             
             response = await a2a_client.send_message(request)
             
-            # Get task updates
-            if hasattr(response.root, 'result') and hasattr(response.root.result, 'id'):
-                task_id = response.root.result.id
-                
-                # Poll for task completion
-                while True:
-                    get_request = GetTaskRequest(
-                        id=str(uuid.uuid4()),
-                        params=TaskQueryParams(id=task_id, historyLength=10)
-                    )
-                    task_response = await a2a_client.get_task(get_request)
-                    
-                    if hasattr(task_response.root, 'result'):
-                        current_task = task_response.root.result
-                        
-                        # Check for artifacts
-                        if hasattr(current_task, 'artifacts') and current_task.artifacts:
-                            for artifact in current_task.artifacts:
-                                if hasattr(artifact, 'parts'):
-                                    for part in artifact.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            state.messages.append({
-                                                'role': 'assistant',
-                                                'content': part.root.text,
-                                            })
-                                            yield
-                        
-                        # Check if completed
-                        if current_task.status.state == 'completed':
-                            break
-                        elif current_task.status.state in ['failed', 'canceled']:
-                            state.messages.append({
-                                'role': 'error',
-                                'content': f'Task {current_task.status.state}',
-                            })
-                            yield
-                            break
-                    
-                    await asyncio.sleep(0.5)
+            # Server runs the full agent then returns; response may contain completed task (no polling needed)
+            result = getattr(response.root, 'result', None)
+            current_task = None
+            task_id = getattr(result, 'id', None) if result is not None else None
+            if result is not None:
+                task_state = getattr(getattr(result, 'status', None), 'state', None)
+                if task_state == 'completed':
+                    current_task = result  # use send_message response directly
+            # If not completed, poll get_task until done or timeout
+            max_polls = 240  # 2 min at 0.5s
+            poll_count = 0
+
+            while current_task is None and task_id and poll_count < max_polls:
+                get_request = GetTaskRequest(
+                    id=str(uuid.uuid4()),
+                    params=TaskQueryParams(id=task_id, historyLength=10)
+                )
+                task_response = await a2a_client.get_task(get_request)
+                poll_count += 1
+
+                if hasattr(task_response.root, 'result') and task_response.root.result is not None:
+                    current_task = task_response.root.result
+                    task_state = getattr(getattr(current_task, 'status', None), 'state', None)
+                    if task_state == 'completed':
+                        break
+                    if task_state in ('failed', 'canceled'):
+                        state.messages.append({
+                            'role': 'error',
+                            'content': f'Task {task_state}',
+                        })
+                        yield
+                        current_task = None
+                        break
+                    # Still working; clear so we keep polling
+                    current_task = None
+                await asyncio.sleep(0.5)
+
+            if poll_count >= max_polls and current_task is None:
+                state.messages.append({
+                    'role': 'error',
+                    'content': 'Task did not complete in time.',
+                })
+                yield
+            elif current_task is not None:
+                # Show artifacts from completed task
+                artifacts = getattr(current_task, 'artifacts', None) or []
+                for artifact in artifacts:
+                    if hasattr(artifact, 'parts'):
+                        for part in artifact.parts:
+                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                state.messages.append({
+                                    'role': 'assistant',
+                                    'content': part.root.text,
+                                })
+                                yield
             
             # Add user message
             state.messages.insert(0, {
@@ -221,17 +237,4 @@ def support_page():
 
 
 if __name__ == '__main__':
-    import subprocess
-    import sys
-    sys.exit(
-        subprocess.call(
-            [
-                sys.executable,
-                '-m',
-                'gunicorn',
-                '--bind',
-                '0.0.0.0:12000',
-                'ui.main:me',
-            ]
-        )
-    )
+    me.run(port=12000)

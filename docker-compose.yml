@@ -21,45 +21,230 @@ services:
     networks:
       - support_agents_network
 
-  app:
+  # Ingestion Agent - Port 10001
+  ingestion_agent:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: support_agents_app
+    container_name: support_agents_ingestion
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      DB_ECHO: ${DB_ECHO:-False}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://ingestion_agent:10001
     ports:
-      - "8083:8083" # Host agent
-      - "10001:10001" # Ingestion agent
-      - "10002:10002" # Planner agent
-      - "10003:10003" # Intent agent
-      - "10004:10004" # RAG agent
-      - "10005:10005" # Memory agent
-      - "10006:10006" # Reasoning agent
-      - "10007:10007" # Response agent
-      - "10008:10008" # Guardrails agent
-      - "12000:12000" # UI
+      - "10001:10001"
     volumes:
       - ./data:/app/data
-      - ./agents:/app/agents
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - support_agents_network
+    command: python -m agents.ingestion_agent.__main__ --host 0.0.0.0 --port 10001
+    restart: unless-stopped
+
+  # Intent Classification Agent - Port 10003
+  intent_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_intent
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://intent_agent:10003
+    ports:
+      - "10003:10003"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.intent_agent.__main__ --host 0.0.0.0 --port 10003
+    restart: unless-stopped
+
+  # RAG Agent - Port 10012
+  rag_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_rag
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHROMA_HOST: ${CHROMA_HOST:-host.docker.internal}
+      CHROMA_PORT: ${CHROMA_PORT:-8000}
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-support-agent-x}
+      APP_URL: http://rag_agent:10012
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "10012:10012"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.rag_agent.__main__ --host 0.0.0.0 --port 10012
+    restart: unless-stopped
+
+  # Response Agent - Port 10007
+  response_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_response
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://response_agent:10007
+    ports:
+      - "10007:10007"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.response_agent.__main__ --host 0.0.0.0 --port 10007
+    restart: unless-stopped
+
+  # Planner Agent - Port 10002
+  # Depends on Intent, RAG, and Response agents being ready
+  planner_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_planner
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      INTENT_AGENT_URL: http://intent_agent:10003
+      RAG_AGENT_URL: http://rag_agent:10012
+      RESPONSE_AGENT_URL: http://response_agent:10007
+      APP_URL: http://planner_agent:10002
+    ports:
+      - "10002:10002"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      intent_agent:
+        condition: service_started
+      rag_agent:
+        condition: service_started
+      response_agent:
+        condition: service_started
+    networks:
+      - support_agents_network
     command: >
       sh -c "
-        echo 'Waiting for database to be ready...' &&
+        echo 'Waiting for Intent, RAG, and Response agents to be ready...' &&
         sleep 5 &&
-        python scripts/init_db.py --seed &&
-        echo 'Database initialized. Starting application...' &&
-        gunicorn --bind 0.0.0.0:12000 ui.main:me
+        python -m agents.planner_agent.__main__ --host 0.0.0.0 --port 10002
       "
+    restart: unless-stopped
+
+  # Host Agent - Port 8083
+  # Depends on Ingestion and Planner agents being ready
+  host_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_host
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      INGESTION_AGENT_URL: http://ingestion_agent:10001
+      PLANNER_AGENT_URL: http://planner_agent:10002
+      APP_URL: http://host_agent:8083
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ingestion_agent:
+        condition: service_started
+      planner_agent:
+        condition: service_started
+    networks:
+      - support_agents_network
+    command: >
+      sh -c "
+        echo 'Waiting for Ingestion and Planner agents to be ready...' &&
+        sleep 5 &&
+        python -m agents.host_agent.__main__ --host 0.0.0.0 --port 8083
+      "
+    restart: unless-stopped
+
+  # UI - Port 12000
+  # Depends on Host agent being ready
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_ui
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      HOST_AGENT_URL: http://host_agent:8083
+    ports:
+      - "12000:12000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      host_agent:
+        condition: service_started
+    networks:
+      - support_agents_network
+    command: >
+      sh -c "
+        echo 'Initializing database...' &&
+        python scripts/init_db.py --seed &&
+        echo 'Waiting for Host agent to be ready...' &&
+        sleep 5 &&
+        echo 'Starting UI...' &&
+        gunicorn --bind 0.0.0.0:12000 --timeout 120 ui.main:me
+      "
+    restart: unless-stopped
 
 volumes:
   postgres_data:

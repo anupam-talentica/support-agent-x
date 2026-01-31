@@ -87,7 +87,13 @@ The system uses **three separate databases**:
    docker-compose up postgres -d
    ```
 
-3. **Initialize databases**:
+3. **Start ChromaDB Server** (required for RAG agent):
+   ```bash
+   # Start ChromaDB listening on all interfaces (required for Docker)
+   chroma run --host 0.0.0.0 --port 8000
+   ```
+
+4. **Initialize databases**:
    ```bash
    # Application database
    python scripts/init_db.py --seed
@@ -95,8 +101,10 @@ The system uses **three separate databases**:
    # Memory database
    python agents/memory_agent/scripts/init_memory_db.py
    ```
+   
+   **Note:** ChromaDB must be started with `--host 0.0.0.0` (not `localhost` or `127.0.0.1`) to allow Docker containers to connect via `host.docker.internal`.
 
-4. **Start agents**:
+5. **Start agents**:
    ```bash
    # Option 1: Use script
    chmod +x scripts/start_all_agents.sh
@@ -108,7 +116,7 @@ The system uses **three separate databases**:
    # ... etc
    ```
 
-5. **Start UI**:
+6. **Start UI**:
    ```bash
    python -m ui.main
    ```
@@ -143,6 +151,21 @@ postgresql://support_user:support_pass@localhost:5432/support_agents_db
 ```
 
 Set `DATABASE_URL` in `.env` to customize.
+
+### ChromaDB Setup
+ChromaDB is required for the RAG agent. Start it with:
+
+```bash
+# Start ChromaDB server (must use 0.0.0.0 for Docker compatibility)
+chroma run --host 0.0.0.0 --port 8000
+```
+
+**Important:** Use `--host 0.0.0.0` (not `localhost` or `127.0.0.1`) to allow Docker containers to connect.
+
+After starting ChromaDB, ingest documents:
+```bash
+python scripts/ingest_rag_data.py
+```
 
 ## Project Structure
 

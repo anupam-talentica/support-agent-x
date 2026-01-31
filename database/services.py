@@ -55,6 +55,19 @@ class TicketService:
         return ticket
 
     @staticmethod
+    def update_ticket_priority(
+        db: Session, ticket_id: str, priority: str
+    ) -> Optional[Ticket]:
+        """Update ticket priority."""
+        ticket = db.query(Ticket).filter(Ticket.ticket_id == ticket_id).first()
+        if ticket:
+            ticket.priority = priority
+            ticket.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(ticket)
+        return ticket
+
+    @staticmethod
     def list_tickets(
         db: Session,
         user_id: Optional[str] = None,

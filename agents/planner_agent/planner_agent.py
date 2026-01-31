@@ -19,6 +19,9 @@ from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.tool_context import ToolContext
+from google.adk.models.lite_llm import LiteLlm
+from a2a.types import GetTaskRequest, TaskQueryParams
+import asyncio
 
 from ..host_agent.remote_agent_connection import RemoteAgentConnections
 
@@ -67,9 +70,10 @@ class PlannerAgent:
 
     def create_agent(self) -> Agent:
         """Create an instance of the PlannerAgent."""
-        gemini_model = "openai/gpt-4.1-mini"
+        # Use OpenAI model for consistency, or Google AI Studio format
+        model_name = os.getenv('LITELLM_MODEL', 'openai/gpt-4.1-mini')
         return Agent(
-            model=gemini_model,
+            model=LiteLlm(model=model_name),
             name='Planner_agent',
             instruction=self.root_instruction,
             before_model_callback=self.before_model_callback,
@@ -98,8 +102,9 @@ class PlannerAgent:
         * **Fixed Routing Sequence:** Always route tickets in this exact order:
           1. First, send the ticket to the "Intent Classification Agent" for classification
           2. Then, send the ticket query to the "RAG Agent" to retrieve relevant knowledge from documents
-          3. Finally, send the classified ticket information and retrieved knowledge to the "Response Agent" to generate a human-readable response
-
+                1. if the "RAG Agent" has no knowledge or is unable to respond, return with the message "we are looking into your problem"
+                2. if the "RAG Agent" has a response, return that response 
+       
         * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names.
 
         * **Execution Plan Creation:** Use the `create_execution_plan` function to record your planning decisions.
@@ -113,8 +118,10 @@ class PlannerAgent:
         1. Receive normalized ticket → Create execution plan
         2. Route to Intent Classification Agent → Get classification
         3. Route to RAG Agent with ticket query → Get relevant knowledge documents
-        4. Route to Response Agent with classification + retrieved knowledge → Get final response
-        5. Return aggregated response
+        4. If the RAG agent has not found any relevant documents respond back with the message *we have created a ticket and are looking at your problem*
+            else
+            return the information the RAG agent has provided
+       
         """
 
     def before_model_callback(
@@ -198,21 +205,28 @@ class PlannerAgent:
 
         # Wait for task completion and collect artifacts
         result_parts = []
-        async for update in client.agent_client.get_task_updates(task_obj.id):
-            if update.root.type == 'task_artifact_update':
-                if hasattr(update.root, 'artifact') and update.root.artifact:
-                    result_parts.append(update.root.artifact)
-            elif update.root.type == 'task_status_update':
-                if hasattr(update.root, 'status') and update.root.status == 'completed':
+        while True:
+            get_request = GetTaskRequest(
+                id=str(uuid.uuid4()),
+                params=TaskQueryParams(id=task_obj.id, historyLength=10)
+            )
+            task_response = await client.agent_client.get_task(get_request)
+            
+            if hasattr(task_response.root, 'result'):
+                current_task = task_response.root.result
+                if current_task.status.state == 'completed':
+                    result_parts = current_task.artifacts or []
                     break
+                elif current_task.status.state in ['failed', 'canceled']:
+                    break
+            await asyncio.sleep(0.5)
 
         # Extract text from artifacts
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    if part.type == 'text':
-                        result_text += part.text + '\n'
+                    result_text += part.root.text + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}
 

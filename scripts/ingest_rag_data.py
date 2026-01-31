@@ -124,7 +124,8 @@ def main():
         # "Vector databases store data as high-dimensional vectors, enabling semantic search capabilities. They are essential for modern AI applications.",
         # "OpenAI's GPT models are large language models that can generate human-like text. They are trained on vast amounts of internet text data.",
 
-        "our operating hours are between 12am to 4pm"
+        "our operating hours are between 12am to 4pm",
+        "maximum refund amout is 200 rs"
     ]
 
     # Add documents

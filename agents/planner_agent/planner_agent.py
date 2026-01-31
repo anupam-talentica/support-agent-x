@@ -84,6 +84,8 @@ class PlannerAgent:
             tools=[
                 self.send_message,
                 self.create_execution_plan,
+                self.search_similar_tickets,
+                self.store_ticket_resolution,
             ],
         )
 
@@ -96,30 +98,41 @@ class PlannerAgent:
         **Core Directives:**
 
         * **Execution Planning:** Analyze the normalized ticket information and create an execution plan that determines:
-          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Response Synthesis)
+          1. Which agents need to be invoked (Intent Classification, Memory, RAG Knowledge Retrieval, Response Synthesis)
           2. The sequence of agent invocations
           3. Any parallel or async operations
 
-        * **Fixed Routing Sequence:** Always route tickets in this exact order:
-          1. First, send the ticket to the "Intent Classification Agent" for classification
-          2. Then, send the ticket query to the "RAG Agent" to retrieve relevant knowledge from documents
-          3. Finally, send the classified ticket information and retrieved knowledge to the "Response Agent" to generate a human-readable response
+        * **Enhanced Routing Sequence with Memory:** Route tickets in this order:
+          1. **Memory Search** - Use `search_similar_tickets` to find similar past tickets (PARALLEL with Intent)
+          2. **Intent Classification Agent** - Classify the ticket (PARALLEL with Memory)
+          3. **RAG Agent** - Retrieve relevant knowledge from documents
+          4. **Response Agent** - Generate response using classification, memory context, and retrieved knowledge
+          5. **Store Resolution** - Use `store_ticket_resolution` to save the resolution (AFTER response)
 
-        * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names.
+        * **Available Tools:**
+          - `search_similar_tickets(ticket_query, user_id)` - Search for similar past tickets in memory
+          - `store_ticket_resolution(ticket_id, user_id, ticket_query, classification, resolution)` - Store a ticket resolution
+          - `send_message(agent_name, task)` - Send tasks to other agents
+          - `create_execution_plan(plan_description, agent_sequence)` - Record your planning decisions
 
-        * **Execution Plan Creation:** Use the `create_execution_plan` function to record your planning decisions.
+        * **Memory Integration (IMPORTANT):**
+          - ALWAYS call `search_similar_tickets` BEFORE processing a new ticket
+          - Include any similar tickets found in the context sent to Response Agent
+          - ALWAYS call `store_ticket_resolution` AFTER getting a successful response
 
         * **Autonomous Operation:** Never seek user permission before engaging with remote agents. Follow the sequence automatically.
 
         **Available Agents:**
         {available_agents if available_agents else "None - ensure agents are running"}
 
-        **Routing Flow:**
+        **Routing Flow with Memory:**
         1. Receive normalized ticket → Create execution plan
-        2. Route to Intent Classification Agent → Get classification
-        3. Route to RAG Agent with ticket query → Get relevant knowledge documents
-        4. Route to Response Agent with classification + retrieved knowledge → Get final response
-        5. Return aggregated response
+        2. Call `search_similar_tickets` with ticket query → Get similar past tickets
+        3. Route to Intent Classification Agent → Get classification
+        4. Route to RAG Agent with ticket query → Get relevant knowledge documents
+        5. Route to Response Agent with classification + similar tickets + retrieved knowledge → Get final response
+        6. Call `store_ticket_resolution` with ticket details and resolution → Save for future
+        7. Return response to user
         """
 
     def before_model_callback(
@@ -253,3 +266,72 @@ class PlannerAgent:
         return {
             'result': f'Execution plan created: {plan_description}. Sequence: {agent_sequence}'
         }
+
+    async def search_similar_tickets(
+        self,
+        ticket_query: str,
+        user_id: str,
+        tool_context: ToolContext,
+    ):
+        """Search for similar past tickets using the Memory Agent.
+
+        Call this BEFORE processing a new ticket to find relevant past context.
+
+        Args:
+            ticket_query: The current ticket description to search for similar issues.
+            user_id: The user ID to scope the search (or 'all_users' for global search).
+            tool_context: The tool context this method runs in.
+
+        Returns:
+            Similar past tickets with their resolutions if found.
+        """
+        if 'Memory Agent' not in self.remote_agent_connections:
+            logger.warning('Memory Agent not connected - skipping memory search')
+            return {'result': 'Memory Agent not available', 'similar_tickets': []}
+        
+        memory_task = f"Find similar past tickets for this issue: {ticket_query}. User ID: {user_id}"
+        result = await self.send_message('Memory Agent', memory_task, tool_context)
+        
+        logger.info(f'Memory search completed for user {user_id}')
+        return result
+
+    async def store_ticket_resolution(
+        self,
+        ticket_id: str,
+        user_id: str,
+        ticket_query: str,
+        classification: str,
+        resolution: str,
+        tool_context: ToolContext,
+    ):
+        """Store a ticket resolution in the Memory Agent for future reference.
+
+        Call this AFTER successfully resolving a ticket to save the resolution.
+
+        Args:
+            ticket_id: The ticket ID being resolved.
+            user_id: The user ID who submitted the ticket.
+            ticket_query: The original ticket description.
+            classification: The ticket classification (intent, urgency, etc.).
+            resolution: The resolution provided to the user.
+            tool_context: The tool context this method runs in.
+
+        Returns:
+            Confirmation that the resolution was stored.
+        """
+        if 'Memory Agent' not in self.remote_agent_connections:
+            logger.warning('Memory Agent not connected - skipping resolution storage')
+            return {'result': 'Memory Agent not available - resolution not stored'}
+        
+        memory_task = (
+            f"Store this ticket resolution for future reference:\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"User ID: {user_id}\n"
+            f"Original Issue: {ticket_query}\n"
+            f"Classification: {classification}\n"
+            f"Resolution: {resolution}"
+        )
+        result = await self.send_message('Memory Agent', memory_task, tool_context)
+        
+        logger.info(f'Stored resolution for ticket {ticket_id}')
+        return result

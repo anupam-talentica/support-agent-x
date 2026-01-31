@@ -1,6 +1,5 @@
-"""Host Agent A2A Server Entry Point."""
+"""Intent Classification Agent A2A Server Entry Point."""
 
-import asyncio
 import logging
 import os
 
@@ -21,8 +20,8 @@ from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from .host_agent import HostAgent
-from .host_executor import HostExecutor
+from .intent_agent import create_intent_agent
+from .intent_executor import IntentExecutor
 
 
 load_dotenv()
@@ -30,32 +29,7 @@ load_dotenv()
 logging.basicConfig()
 
 DEFAULT_HOST = '0.0.0.0'
-DEFAULT_PORT = 8083
-
-
-def _get_initialized_host_agent_sync():
-    """Synchronously creates and initializes the HostAgent."""
-
-    async def _async_main():
-        host_agent_instance = await HostAgent.create(
-            remote_agent_addresses=[
-                os.getenv('INGESTION_AGENT_URL', 'http://localhost:10001'),
-                os.getenv('PLANNER_AGENT_URL', 'http://localhost:10002'),
-            ]
-        )
-        return host_agent_instance.create_agent()
-
-    try:
-        return asyncio.run(_async_main())
-    except RuntimeError as e:
-        if 'asyncio.run() cannot be called from a running event loop' in str(e):
-            logging.warning(
-                'Warning: Could not initialize HostAgent with asyncio.run(): %s. '
-                'This can happen if an event loop is already running (e.g., in Jupyter). '
-                'Consider initializing HostAgent within an async function in your application.',
-                e,
-            )
-        raise
+DEFAULT_PORT = 10003
 
 
 def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
@@ -69,21 +43,22 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         )
 
     skill = AgentSkill(
-        id='host_routing',
-        name='Host Routing',
-        description='Routes tickets through support agents',
-        tags=['routing', 'orchestration'],
+        id='intent_classification',
+        name='Intent Classification',
+        description='Classifies support tickets by incident type, urgency, and SLA risk',
+        tags=['classification', 'intent', 'priority'],
         examples=[
-            'Route ticket to ingestion',
-            'Process support ticket',
+            'Classify payment issue',
+            'Determine ticket urgency',
+            'Assess SLA risk',
         ],
     )
 
     app_url = os.environ.get('APP_URL', f'http://{host}:{port}')
 
     agent_card = AgentCard(
-        name='Host Agent',
-        description='Routes tickets through support agents',
+        name='Intent Classification Agent',
+        description='Classifies support tickets by incident type, urgency, and SLA risk',
         url=app_url,
         version='1.0.0',
         default_input_modes=['text'],
@@ -92,15 +67,15 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         skills=[skill],
     )
 
-    root_agent = _get_initialized_host_agent_sync()
+    adk_agent = create_intent_agent()
     runner = Runner(
         app_name=agent_card.name,
-        agent=root_agent,
+        agent=adk_agent,
         artifact_service=InMemoryArtifactService(),
         session_service=InMemorySessionService(),
         memory_service=InMemoryMemoryService(),
     )
-    agent_executor = HostExecutor(runner, agent_card)
+    agent_executor = IntentExecutor(runner, agent_card)
 
     request_handler = DefaultRequestHandler(
         agent_executor=agent_executor, task_store=InMemoryTaskStore()

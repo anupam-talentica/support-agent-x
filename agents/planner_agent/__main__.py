@@ -1,4 +1,4 @@
-"""Host Agent A2A Server Entry Point."""
+"""Planner Agent A2A Server Entry Point."""
 
 import asyncio
 import logging
@@ -21,8 +21,8 @@ from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from .host_agent import HostAgent
-from .host_executor import HostExecutor
+from .planner_agent import PlannerAgent
+from .planner_executor import PlannerExecutor
 
 
 load_dotenv()
@@ -30,29 +30,29 @@ load_dotenv()
 logging.basicConfig()
 
 DEFAULT_HOST = '0.0.0.0'
-DEFAULT_PORT = 8083
+DEFAULT_PORT = 10002
 
 
-def _get_initialized_host_agent_sync():
-    """Synchronously creates and initializes the HostAgent."""
+def _get_initialized_planner_agent_sync():
+    """Synchronously creates and initializes the PlannerAgent."""
 
     async def _async_main():
-        host_agent_instance = await HostAgent.create(
+        planner_agent_instance = await PlannerAgent.create(
             remote_agent_addresses=[
-                os.getenv('INGESTION_AGENT_URL', 'http://localhost:10001'),
-                os.getenv('PLANNER_AGENT_URL', 'http://localhost:10002'),
+                os.getenv('INTENT_AGENT_URL', 'http://localhost:10003'),
+                os.getenv('RESPONSE_AGENT_URL', 'http://localhost:10007'),
             ]
         )
-        return host_agent_instance.create_agent()
+        return planner_agent_instance.create_agent()
 
     try:
         return asyncio.run(_async_main())
     except RuntimeError as e:
         if 'asyncio.run() cannot be called from a running event loop' in str(e):
             logging.warning(
-                'Warning: Could not initialize HostAgent with asyncio.run(): %s. '
+                'Warning: Could not initialize PlannerAgent with asyncio.run(): %s. '
                 'This can happen if an event loop is already running (e.g., in Jupyter). '
-                'Consider initializing HostAgent within an async function in your application.',
+                'Consider initializing PlannerAgent within an async function in your application.',
                 e,
             )
         raise
@@ -69,21 +69,22 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         )
 
     skill = AgentSkill(
-        id='host_routing',
-        name='Host Routing',
-        description='Routes tickets through support agents',
-        tags=['routing', 'orchestration'],
+        id='task_planning',
+        name='Task Planning',
+        description='Creates execution plans and routes tasks to specialized agents',
+        tags=['planning', 'routing', 'orchestration'],
         examples=[
-            'Route ticket to ingestion',
-            'Process support ticket',
+            'Plan ticket processing workflow',
+            'Route to classification agent',
+            'Create execution sequence',
         ],
     )
 
     app_url = os.environ.get('APP_URL', f'http://{host}:{port}')
 
     agent_card = AgentCard(
-        name='Host Agent',
-        description='Routes tickets through support agents',
+        name='Planner Agent',
+        description='Creates execution plans and routes tasks to specialized agents',
         url=app_url,
         version='1.0.0',
         default_input_modes=['text'],
@@ -92,7 +93,7 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         skills=[skill],
     )
 
-    root_agent = _get_initialized_host_agent_sync()
+    root_agent = _get_initialized_planner_agent_sync()
     runner = Runner(
         app_name=agent_card.name,
         agent=root_agent,
@@ -100,7 +101,7 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         session_service=InMemorySessionService(),
         memory_service=InMemoryMemoryService(),
     )
-    agent_executor = HostExecutor(runner, agent_card)
+    agent_executor = PlannerExecutor(runner, agent_card)
 
     request_handler = DefaultRequestHandler(
         agent_executor=agent_executor, task_store=InMemoryTaskStore()

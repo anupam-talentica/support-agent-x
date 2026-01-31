@@ -1,4 +1,4 @@
-"""Host Agent A2A Server Entry Point."""
+"""Host Agent A2A Server Entry Point with REST API endpoints."""
 
 import asyncio
 import logging
@@ -6,6 +6,9 @@ import os
 
 import click
 import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -23,11 +26,13 @@ from google.adk.sessions import InMemorySessionService
 
 from .host_agent import HostAgent
 from .host_executor import HostExecutor
+from .server import api_app, set_dependencies
 
 
 load_dotenv()
 
-logging.basicConfig()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = '0.0.0.0'
 DEFAULT_PORT = 8083
@@ -44,7 +49,7 @@ def _get_initialized_host_agent_sync():
                 # Note: Response and RAG agents are routed through Planner Agent, not directly by Host Agent
             ]
         )
-        return host_agent_instance.create_agent()
+        return host_agent_instance
 
     try:
         return asyncio.run(_async_main())
@@ -60,7 +65,20 @@ def _get_initialized_host_agent_sync():
 
 
 def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
+    """Start the Host Agent server with both A2A and REST API support."""
+    
     # Verify an API key is set.
+
+    if os.getenv('GOOGLE_GENAI_USE_VERTEXAI') != 'TRUE' and not os.getenv(
+        'GOOGLE_API_KEY'
+    ):
+        raise ValueError(
+            'GOOGLE_API_KEY environment variable not set and '
+            'GOOGLE_GENAI_USE_VERTEXAI is not TRUE.'
+        )
+
+    # Define agent skill
+
     skill = AgentSkill(
         id='host_routing',
         name='Host Routing',
@@ -74,6 +92,7 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
 
     app_url = os.environ.get('APP_URL', f'http://{host}:{port}')
 
+    # Create agent card
     agent_card = AgentCard(
         name='Host Agent',
         description='Routes tickets through support agents',
@@ -85,25 +104,84 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         skills=[skill],
     )
 
-    root_agent = _get_initialized_host_agent_sync()
+    # Initialize the host agent
+    host_agent_instance = _get_initialized_host_agent_sync()
+    
+    # Create shared session service for both A2A and REST API
+    session_service = InMemorySessionService()
+    
+    # Create the ADK agent from host agent
+    root_agent = host_agent_instance.create_agent()
+    
+    # Create runner for the agent
     runner = Runner(
         app_name=agent_card.name,
         agent=root_agent,
         artifact_service=InMemoryArtifactService(),
-        session_service=InMemorySessionService(),
+        session_service=session_service,
         memory_service=InMemoryMemoryService(),
     )
+    
+    # Set dependencies for REST API endpoints
+    set_dependencies(host_agent_instance, runner, session_service)
+    
+    # Create executor for A2A protocol
     agent_executor = HostExecutor(runner, agent_card)
 
+    # Create A2A request handler
     request_handler = DefaultRequestHandler(
         agent_executor=agent_executor, task_store=InMemoryTaskStore()
     )
 
+    # Create A2A application
     a2a_app = A2AStarletteApplication(
         agent_card=agent_card, http_handler=request_handler
     )
 
-    uvicorn.run(a2a_app.build(), host=host, port=port)
+    # Build the A2A Starlette app
+    a2a_starlette = a2a_app.build()
+
+    # Health check handler for root-level /health endpoint
+    async def health_handler(request):
+        agents_count = len(host_agent_instance.cards) if host_agent_instance else 0
+        agent_names = list(host_agent_instance.cards.keys()) if host_agent_instance else []
+        return JSONResponse({
+            "status": "ok",
+            "agents_connected": agents_count,
+            "agents": agent_names,
+        })
+
+    # Create a combined Starlette app that mounts both:
+    # - /health is a direct route (health check)
+    # - /api/* routes go to FastAPI (REST API for frontend)
+    # - Everything else goes to A2A server
+    combined_app = Starlette(
+        routes=[
+            Route("/health", health_handler, methods=["GET"]),
+            Mount("/api", app=api_app),
+            Mount("/", app=a2a_starlette),
+        ]
+    )
+
+    # Add CORS to the combined app
+    from starlette.middleware.cors import CORSMiddleware as StarletteCORS
+    combined_app.add_middleware(
+        StarletteCORS,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Log startup information
+    logger.info(f"Starting Host Agent server on {host}:{port}")
+    logger.info(f"  - REST API: http://{host}:{port}/api/chat")
+    logger.info(f"  - SSE Stream: http://{host}:{port}/api/chat/stream")
+    logger.info(f"  - Agents List: http://{host}:{port}/api/agents")
+    logger.info(f"  - A2A Protocol: http://{host}:{port}/")
+    logger.info(f"  - Health Check: http://{host}:{port}/health")
+
+    uvicorn.run(combined_app, host=host, port=port)
 
 
 @click.command()

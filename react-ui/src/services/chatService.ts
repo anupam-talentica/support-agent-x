@@ -1,7 +1,10 @@
 /**
- * Chat service – talks to the support chat backend.
- * Currently uses a mock API; replace sendMessage with a real HTTP call when the backend is ready.
+ * Chat service – talks to the Host Agent backend using Server-Sent Events (SSE).
+ * Provides real-time status updates as the agent processes requests through multiple sub-agents.
  */
+
+// Configuration - update this to match your backend URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8083";
 
 export interface ChatMessagePayload {
   role: "user" | "assistant";
@@ -10,98 +13,254 @@ export interface ChatMessagePayload {
 
 export interface SendMessageResponse {
   response: string;
+  conversation_id?: string;
+  agents_used?: string[];
 }
 
 /**
- * Callback for agent status updates from the backend (e.g. Server-Sent Events).
- * Called whenever the backend sends a new status; status text is free-form from the server.
- *
- * Example with SSE:
- *   const eventSource = new EventSource(`/api/chat/stream?message=...`);
- *   eventSource.addEventListener('status', (e) => onStatusChange?.(e.data));
- *   eventSource.addEventListener('message', (e) => { ... final response ... });
+ * Callback for agent status updates from the backend (Server-Sent Events).
+ * Called whenever the backend sends a new status update.
  */
 export type OnAgentStatusChange = (status: string) => void;
 
-const MOCK_DELAY_MS = 600;
+// Store conversation ID for multi-turn conversations
+let currentConversationId: string | null = null;
 
 /**
- * Mock implementation: simulates a network call and returns a simple support-style reply.
- * Real implementation: use SSE or similar, parse status events from the stream,
- * and call onStatusChange(status) whenever the backend sends a status update.
+ * Send a message using Server-Sent Events (SSE) for real-time status updates.
+ * This provides live updates as the host agent delegates to sub-agents.
  */
-async function mockSendMessage(
+function sendMessageWithSSE(
   message: string,
-  _conversationHistory?: ChatMessagePayload[],
   onStatusChange?: OnAgentStatusChange
 ): Promise<SendMessageResponse> {
-  // Mock does not emit status events. Backend will call onStatusChange when it sends status (e.g. via SSE).
-  await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY_MS));
+  return new Promise((resolve, reject) => {
+    // Build query params
+    const params = new URLSearchParams({ message });
+    if (currentConversationId) {
+      params.append("conversation_id", currentConversationId);
+    }
 
-  const lower = message.toLowerCase();
-  if (
-    lower.includes("hello") ||
-    lower.includes("hi") ||
-    lower.includes("hey")
-  ) {
-    return {
-      response: `Hello! **How can I help you today?**
+    const eventSource = new EventSource(
+      `${API_BASE_URL}/api/chat/stream?${params.toString()}`
+    );
 
-Here are some things I can help with:
-- **Billing** – invoices, refunds, payment methods
-- **Account** – login, profile, security
-- **General support** – questions and troubleshooting
+    let agentsUsed: string[] = [];
 
-Just type your question below.`,
+    // Handle status events (processing updates)
+    eventSource.addEventListener("status", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const statusMessage = data.message || data.status || "Processing...";
+        onStatusChange?.(statusMessage);
+      } catch {
+        // If not JSON, use raw data
+        onStatusChange?.(event.data);
+      }
+    });
+
+    // Handle agent delegation events
+    eventSource.addEventListener("agent", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const agentName = data.agent || "Agent";
+        if (!agentsUsed.includes(agentName)) {
+          agentsUsed.push(agentName);
+        }
+        onStatusChange?.(`Delegating to ${agentName}...`);
+      } catch {
+        onStatusChange?.("Delegating to agent...");
+      }
+    });
+
+    // Handle final message event
+    eventSource.addEventListener("message", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Store conversation ID for subsequent messages
+        if (data.conversation_id) {
+          currentConversationId = data.conversation_id;
+        }
+
+        // Update agents used from response
+        if (data.agents_used) {
+          agentsUsed = data.agents_used;
+        }
+
+        resolve({
+          response: data.response || "No response received",
+          conversation_id: data.conversation_id,
+          agents_used: agentsUsed,
+        });
+      } catch (e) {
+        reject(new Error(`Failed to parse response: ${e}`));
+      }
+      eventSource.close();
+    });
+
+    // Handle error events from the server
+    eventSource.addEventListener("error", (event) => {
+      // Check if it's a custom error event with data
+      if (event instanceof MessageEvent && event.data) {
+        try {
+          const data = JSON.parse(event.data);
+          reject(new Error(data.error || "Server error occurred"));
+        } catch {
+          reject(new Error("Connection error occurred"));
+        }
+      } else {
+        // Connection error
+        reject(new Error("Failed to connect to server"));
+      }
+      eventSource.close();
+    });
+
+    // Handle stream completion
+    eventSource.addEventListener("done", () => {
+      eventSource.close();
+    });
+
+    // Handle connection errors
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error:", error);
+      // Only reject if we haven't already resolved
+      if (eventSource.readyState === EventSource.CLOSED) {
+        return; // Already handled
+      }
+      eventSource.close();
+      reject(new Error("Connection to server lost"));
     };
+  });
+}
+
+/**
+ * Fallback: Send a message using regular HTTP POST (no streaming).
+ * Use this if SSE is not available or for simpler integration.
+ */
+async function sendMessageHttp(
+  message: string
+): Promise<SendMessageResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      conversation_id: currentConversationId,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error: ${response.status} - ${errorText}`);
   }
-  if (lower.includes("help") || lower.includes("support")) {
-    return {
-      response: `## Support options
 
-I'm here to help. You can ask about:
+  const data = await response.json();
 
-1. **Billing** – payments, refunds, invoices
-2. **Account** – profile, login, password reset
-3. **Tickets** – check status or create a new request
-4. **General** – FAQs and how-to guides
-
-Use \`/ticket\` to create a support ticket, or describe your issue and I'll guide you.`,
-    };
-  }
-  if (lower.includes("thank")) {
-    return {
-      response: "You're welcome! **Is there anything else I can help with?**",
-    };
-  }
-  if (lower.includes("bye") || lower.includes("goodbye")) {
-    return {
-      response: "**Goodbye!** Feel free to come back if you need more help.",
-    };
+  // Store conversation ID for subsequent messages
+  if (data.conversation_id) {
+    currentConversationId = data.conversation_id;
   }
 
   return {
-    response: `Thanks for your message. This is a **mock response**—when connected to your backend API, you'll get real support here.
-
-**You said:** "${message.slice(0, 80)}${message.length > 80 ? "…" : ""}"
-
-Need help? Try asking about \`billing\`, \`account\`, or \`support\`.`,
+    response: data.response,
+    conversation_id: data.conversation_id,
+    agents_used: data.agents_used,
   };
+}
+
+/**
+ * Check if the backend is healthy.
+ */
+async function checkHealth(): Promise<{
+  status: string;
+  agents_connected: number;
+  agents: string[];
+}> {
+  const response = await fetch(`${API_BASE_URL}/health`);
+  if (!response.ok) {
+    throw new Error(`Health check failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * List all connected remote agents.
+ */
+async function listAgents(): Promise<
+  Array<{ name: string; description: string | null; url: string | null }>
+> {
+  const response = await fetch(`${API_BASE_URL}/api/agents`);
+  if (!response.ok) {
+    throw new Error(`Failed to list agents: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Start a new conversation (clears the current conversation ID).
+ */
+function startNewConversation(): void {
+  currentConversationId = null;
+}
+
+/**
+ * Get the current conversation ID.
+ */
+function getConversationId(): string | null {
+  return currentConversationId;
 }
 
 export const chatService = {
   /**
    * Send a user message and get an assistant response.
-   * - conversationHistory: optional context for your backend.
-   * - onStatusChange: called whenever the backend sends an agent status update (e.g. via Server-Sent Events).
-   *   Status is a free-form string from the server (e.g. "Thinking...", "Delegating to billing agent", "Waiting for support").
+   * Uses Server-Sent Events for real-time status updates.
+   *
+   * @param message - The user's message
+   * @param conversationHistory - Optional conversation history (not used in current implementation)
+   * @param onStatusChange - Callback for real-time status updates
+   * @returns Promise with the response
    */
   async sendMessage(
     message: string,
-    conversationHistory?: ChatMessagePayload[],
+    _conversationHistory?: ChatMessagePayload[],
     onStatusChange?: OnAgentStatusChange
   ): Promise<SendMessageResponse> {
-    // TODO: Replace with real API (e.g. fetch + SSE). On each status event from the server, call onStatusChange(event.status).
-    return mockSendMessage(message, conversationHistory, onStatusChange);
+    try {
+      // Always use SSE for real-time updates
+      return await sendMessageWithSSE(message, onStatusChange);
+    } catch (error) {
+      console.error("SSE failed, falling back to HTTP:", error);
+      // Fallback to HTTP if SSE fails
+      onStatusChange?.("Processing...");
+      return await sendMessageHttp(message);
+    }
   },
+
+  /**
+   * Send message without streaming (simple HTTP POST).
+   */
+  sendMessageSync: sendMessageHttp,
+
+  /**
+   * Check backend health status.
+   */
+  checkHealth,
+
+  /**
+   * List all connected remote agents.
+   */
+  listAgents,
+
+  /**
+   * Start a new conversation (resets conversation context).
+   */
+  startNewConversation,
+
+  /**
+   * Get the current conversation ID.
+   */
+  getConversationId,
 };

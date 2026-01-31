@@ -79,8 +79,9 @@ class IntentExecutor(AgentExecutor):
                     logger.debug('Yielding final response: %s', parts)
                     
                     # Extract classification from response and update ticket in database
-                    if parts and isinstance(parts[0].root, TextPart):
-                        response_text = parts[0].root.text
+                    # Note: convert_genai_part_to_a2a returns TextPart directly for text (not Part(root=TextPart))
+                    if parts and isinstance(parts[0], TextPart):
+                        response_text = parts[0].text
                         try:
                             # Try to parse JSON from response
                             classification = self._extract_classification(response_text)
@@ -110,9 +111,9 @@ class IntentExecutor(AgentExecutor):
                                 logger.error(f'Failed to update ticket priority in database: {e}')
                                 # Continue even if DB update fails
                             
-                            # Add classification to response
+                            # Create a new TextPart with updated text (TextPart may be immutable)
                             classification_text = json.dumps(classification, indent=2)
-                            parts[0].root.text = f"{response_text}\n\nClassification:\n{classification_text}"
+                            parts[0] = TextPart(text=f"{response_text}\n\nClassification:\n{classification_text}")
                         except Exception as e:
                             logger.error(f'Failed to extract classification: {e}')
                             # Continue with original response
@@ -265,8 +266,9 @@ def convert_a2a_part_to_genai(part: Part) -> types.Part:
     raise ValueError(f'Unsupported part type: {type(part)}')
 
 
-def convert_genai_part_to_a2a(part: types.Part) -> Part:
+def convert_genai_part_to_a2a(part: types.Part):
     """Convert a single Google Gen AI Part type into an A2A Part type."""
+    # Note: Returns TextPart/FilePart directly for text/file_data, Part(root=...) for inline_data
     if part.text:
         return TextPart(text=part.text)
     if part.file_data:

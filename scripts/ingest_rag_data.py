@@ -2,12 +2,13 @@
 RAG (Retrieval Augmented Generation) script using ChromaDB in client-server mode.
 
 Prerequisites:
-1. Start ChromaDB server: chroma run --host localhost --port 8000 --path ./db
+1. Start ChromaDB server: chroma run --host 0.0.0.0 --port 8000
+   Note: Use --host 0.0.0.0 (not localhost) to allow Docker containers to connect
 2. Set OPENAI_API_KEY environment variable (for LLM responses)
-3. Install dependencies: pip install -r requirements.txt
+3. Install dependencies: pip install -e ".[rag]"
 
 Usage:
-    python rag.py
+    python scripts/ingest_rag_data.py
 """
 
 from typing import Optional

@@ -1,6 +1,9 @@
 import os
+import logging
 
 from .rag import ChromaRAG
+
+logger = logging.getLogger(__name__)
 
 
 class RagAgent: 
@@ -13,11 +16,18 @@ class RagAgent:
         chroma_port = int(os.getenv('CHROMA_PORT', '8000'))
         collection_name = os.getenv('CHROMA_COLLECTION', 'support-agent-x')
         
-        self._rag = ChromaRAG(
-            host=chroma_host,
-            port=chroma_port,
-            collection_name=collection_name,
-        )
+        logger.info(f"Initializing RAG Agent with ChromaDB at {chroma_host}:{chroma_port}, collection: {collection_name}")
+        
+        try:
+            self._rag = ChromaRAG(
+                host=chroma_host,
+                port=chroma_port,
+                collection_name=collection_name,
+            )
+            logger.info(f"Successfully connected to ChromaDB at {chroma_host}:{chroma_port}")
+        except Exception as e:
+            logger.error(f"Failed to connect to ChromaDB at {chroma_host}:{chroma_port}: {e}")
+            raise
 
     def get_processing_message(self) -> str:
         return 'Processing the rag request...'

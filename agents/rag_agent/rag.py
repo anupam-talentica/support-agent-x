@@ -35,13 +35,24 @@ class ChromaRAG:
             port: ChromaDB server port
             collection_name: Name of the collection to use
         """
-        self.client = chromadb.HttpClient(host=host, port=port)
-        print(f"collection name is {collection_name}")
-        # Get or create collection
-        self.collection = self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"}, 
-        )
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Connecting to ChromaDB at {host}:{port}...")
+        try:
+            self.client = chromadb.HttpClient(host=host, port=port)
+            logger.info(f"ChromaDB client created, getting collection '{collection_name}'...")
+            # Get or create collection
+            self.collection = self.client.get_or_create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"}, 
+            )
+            logger.info(f"Collection '{collection_name}' ready. Current count: {self.collection.count()}")
+        except Exception as e:
+            logger.error(f"Failed to connect to ChromaDB at {host}:{port}: {e}")
+            logger.error(f"Make sure ChromaDB is running and accessible from this container.")
+            logger.error(f"On Mac, use 'host.docker.internal' as the host if ChromaDB is on the host machine.")
+            raise
 
         # Initialize OpenAI client for LLM responses
         self.openai_client = OpenAI()

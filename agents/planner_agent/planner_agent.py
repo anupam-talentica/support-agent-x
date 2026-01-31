@@ -19,6 +19,7 @@ from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.tool_context import ToolContext
+from google.adk.models.lite_llm import LiteLlm
 
 from ..host_agent.remote_agent_connection import RemoteAgentConnections
 
@@ -67,9 +68,10 @@ class PlannerAgent:
 
     def create_agent(self) -> Agent:
         """Create an instance of the PlannerAgent."""
-        gemini_model = os.getenv('LITELLM_MODEL', 'gemini-2.5-flash')
+        # Use OpenAI model for consistency, or Google AI Studio format
+        model_name = os.getenv('LITELLM_MODEL', 'openai/gpt-4.1-mini')
         return Agent(
-            model=gemini_model,
+            model=LiteLlm(model=model_name),
             name='Planner_agent',
             instruction=self.root_instruction,
             before_model_callback=self.before_model_callback,

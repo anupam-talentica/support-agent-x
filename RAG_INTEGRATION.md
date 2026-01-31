@@ -48,7 +48,8 @@ Add to your `.env` file:
 RAG_AGENT_URL=http://localhost:10012
 
 # ChromaDB Server Connection (for RAG Agent)
-CHROMA_HOST=localhost
+# When using Docker, use 'host.docker.internal' to connect to host machine
+CHROMA_HOST=host.docker.internal  # For Docker; use 'localhost' for local dev
 CHROMA_PORT=8000
 CHROMA_COLLECTION=support-agent-x
 ```
@@ -64,7 +65,14 @@ CHROMA_COLLECTION=support-agent-x
 
 ### 1. Start ChromaDB Server
 
-Make sure your ChromaDB server is running on `localhost:8000` (or configure via environment variables).
+**Important:** Start ChromaDB with `--host 0.0.0.0` to allow Docker containers to connect:
+
+```bash
+# Start ChromaDB listening on all interfaces (required for Docker)
+chroma run --host 0.0.0.0 --port 8000
+```
+
+**Note:** Using `localhost` or `127.0.0.1` will prevent Docker containers from connecting. Always use `0.0.0.0` when running ChromaDB with Docker.
 
 ### 2. Start All Agents
 
@@ -150,8 +158,14 @@ print(response)
 
 ### ChromaDB connection errors
 
-- Verify ChromaDB server is running
+- **Verify ChromaDB server is running with correct host:**
+  ```bash
+  # Must use 0.0.0.0, not localhost
+  chroma run --host 0.0.0.0 --port 8000
+  ```
 - Check `CHROMA_HOST` and `CHROMA_PORT` environment variables
+- For Docker: Use `CHROMA_HOST=host.docker.internal`
+- For local dev: Use `CHROMA_HOST=localhost`
 - Ensure data was ingested: `python scripts/ingest_rag_data.py`
 
 ### No documents retrieved

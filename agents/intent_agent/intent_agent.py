@@ -8,7 +8,9 @@ from google.adk.models.lite_llm import LiteLlm
 
 def create_intent_agent() -> LlmAgent:
     """Constructs the ADK intent classification agent."""
-    LITELLM_MODEL = os.getenv('LITELLM_MODEL', 'gemini-2.5-flash')
+    # Use Google AI Studio format (gemini/gemini-1.5-flash) or OpenAI model
+    # Default to OpenAI model for consistency with other agents
+    LITELLM_MODEL = os.getenv('LITELLM_MODEL', 'openai/gpt-4.1-mini')
     return LlmAgent(
         model=LiteLlm(model=LITELLM_MODEL),
         name='intent_classification_agent',

@@ -41,8 +41,7 @@ def _get_initialized_host_agent_sync():
             remote_agent_addresses=[
                 os.getenv('INGESTION_AGENT_URL', 'http://localhost:10001'),
                 os.getenv('PLANNER_AGENT_URL', 'http://localhost:10002'),
-                os.getenv('RESPONSE_AGENT_URL', 'http://localhost:10007'),
-                os.getenv('RAG_AGENT_URL', 'http://localhost:10012'),
+                # Note: Response and RAG agents are routed through Planner Agent, not directly by Host Agent
             ]
         )
         return host_agent_instance.create_agent()

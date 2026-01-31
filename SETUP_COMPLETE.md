@@ -84,8 +84,10 @@
 
 3. **Vector Database (ChromaDB)**
    - **Purpose**: Document embeddings for RAG
-   - **Location**: `data/vector_db/` (directory)
-   - **Managed by**: `agents/rag_agent/vector_store.py` (to be created)
+   - **Location**: Server mode (separate process)
+   - **Start Command**: `chroma run --host 0.0.0.0 --port 8000`
+   - **Important**: Must use `--host 0.0.0.0` (not `localhost`) to allow Docker containers to connect
+   - **Managed by**: `agents/rag_agent/rag.py`
 
 ## Quick Start Commands
 
@@ -109,7 +111,11 @@ python scripts/init_db.py --seed
 # 3. Initialize memory database
 python agents/memory_agent/scripts/init_memory_db.py
 
-# 4. Start agents
+# 4. Start ChromaDB server (required for RAG agent)
+# Must use --host 0.0.0.0 for Docker compatibility
+chroma run --host 0.0.0.0 --port 8000
+
+# 5. Start agents
 ./scripts/start_all_agents.sh
 ```
 

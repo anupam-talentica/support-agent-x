@@ -33,7 +33,7 @@ services:
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      LITELLM_MODEL: ${LITELLM_MODEL:-gemini-2.5-flash}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       APP_URL: http://ingestion_agent:10001
     ports:
       - "10001:10001"
@@ -59,7 +59,8 @@ services:
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      LITELLM_MODEL: ${LITELLM_MODEL:-gemini-2.5-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       APP_URL: http://intent_agent:10003
     ports:
       - "10003:10003"
@@ -86,10 +87,12 @@ services:
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      CHROMA_HOST: ${CHROMA_HOST:-chromadb}
+      CHROMA_HOST: ${CHROMA_HOST:-host.docker.internal}
       CHROMA_PORT: ${CHROMA_PORT:-8000}
       CHROMA_COLLECTION: ${CHROMA_COLLECTION:-support-agent-x}
       APP_URL: http://rag_agent:10012
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "10012:10012"
     volumes:
@@ -114,7 +117,7 @@ services:
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      LITELLM_MODEL: ${LITELLM_MODEL:-gemini-2.5-flash}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       APP_URL: http://response_agent:10007
     ports:
       - "10007:10007"
@@ -141,7 +144,7 @@ services:
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      LITELLM_MODEL: ${LITELLM_MODEL:-gemini-2.5-flash}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       INTENT_AGENT_URL: http://intent_agent:10003
       RAG_AGENT_URL: http://rag_agent:10012
       RESPONSE_AGENT_URL: http://response_agent:10007
@@ -182,7 +185,7 @@ services:
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
-      LITELLM_MODEL: ${LITELLM_MODEL:-gemini-2.5-flash}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       INGESTION_AGENT_URL: http://ingestion_agent:10001
       PLANNER_AGENT_URL: http://planner_agent:10002
       APP_URL: http://host_agent:8083

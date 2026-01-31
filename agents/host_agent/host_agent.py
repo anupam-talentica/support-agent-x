@@ -24,6 +24,10 @@ from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.tool_context import ToolContext
+from a2a.types import TaskResubscriptionRequest, TaskIdParams
+from a2a.types import GetTaskRequest, TaskQueryParams
+import asyncio
+
 
 from .remote_agent_connection import RemoteAgentConnections
 
@@ -113,7 +117,7 @@ class HostAgent:
 
     def create_agent(self) -> Agent:
         """Create an instance of the HostAgent."""
-        gemini_model = os.getenv('LITELLM_MODEL', 'gemini-2.5-flash')
+        gemini_model = "openai/gpt-4.1-mini"
         return Agent(
             model=gemini_model,
             name='Host_agent',
@@ -255,20 +259,27 @@ class HostAgent:
 
         # Wait for task completion and collect artifacts
         result_parts = []
-        async for update in client.agent_client.get_task_updates(task.id):
-            if update.root.type == 'task_artifact_update':
-                if hasattr(update.root, 'artifact') and update.root.artifact:
-                    result_parts.append(update.root.artifact)
-            elif update.root.type == 'task_status_update':
-                if hasattr(update.root, 'status') and update.root.status == 'completed':
+        while True:
+            get_request = GetTaskRequest(
+                id=str(uuid.uuid4()),
+                params=TaskQueryParams(id=task.id, historyLength=10)
+            )
+            task_response = await client.agent_client.get_task(get_request)
+            
+            if hasattr(task_response.root, 'result'):
+                current_task = task_response.root.result
+                if current_task.status.state == 'completed':
+                    result_parts = current_task.artifacts or []
                     break
+                elif current_task.status.state in ['failed', 'canceled']:
+                    break
+            await asyncio.sleep(0.5)
 
         # Extract text from artifacts
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    if part.type == 'text':
-                        result_text += part.text + '\n'
+                    result_text += part.root.text + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}

@@ -3,7 +3,7 @@ name = "support-agents"
 version = "0.1.0"
 description = "Collaborative multi-agent support system with RAG, memory, and guardrails"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     # Core A2A and ADK dependencies
     "a2a-sdk>=0.3.0",

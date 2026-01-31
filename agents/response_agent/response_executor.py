@@ -77,8 +77,9 @@ class ResponseExecutor(AgentExecutor):
                             with get_db() as db:
                                 # Extract response text
                                 response_text = ''
-                                if parts and isinstance(parts[0].root, TextPart):
-                                    response_text = parts[0].root.text
+                                print(f"here are a list of parts {parts[0]}")
+                                if parts and isinstance(parts[0], TextPart):
+                                    response_text = parts[0].text
                                 
                                 TaskService.update_task_status(
                                     db,

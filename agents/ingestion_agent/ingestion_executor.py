@@ -75,8 +75,9 @@ class IngestionExecutor(AgentExecutor):
                     logger.debug('Yielding final response: %s', parts)
                     
                     # Extract ticket information from response and create ticket in database
-                    if parts and isinstance(parts[0].root, TextPart):
-                        response_text = parts[0].root.text
+                    print(f"==================== parts in ingestion {parts[0]}")
+                    if parts and isinstance(parts[0], TextPart):
+                        response_text = parts[0].text
                         try:
                             # Try to parse JSON from response
                             ticket_data = self._extract_ticket_data(response_text)

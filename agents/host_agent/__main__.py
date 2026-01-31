@@ -6,9 +6,9 @@ import os
 
 import click
 import uvicorn
-from starlette.applications import Starlette
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -26,7 +26,7 @@ from google.adk.sessions import InMemorySessionService
 
 from .host_agent import HostAgent
 from .host_executor import HostExecutor
-from .server import api_app, set_dependencies
+from .server import get_api_router, set_dependencies
 
 
 load_dotenv()
@@ -141,8 +141,18 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
     # Build the A2A Starlette app
     a2a_starlette = a2a_app.build()
 
-    # Health check handler for root-level /health endpoint
-    async def health_handler(request):
+    # Use FastAPI as main app so /api/* routes are native (fixes 404 when frontend runs outside Docker).
+    main_app = FastAPI(title="Host Agent", version="1.0.0")
+    main_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @main_app.get("/health")
+    async def health_handler():
         agents_count = len(host_agent_instance.cards) if host_agent_instance else 0
         agent_names = list(host_agent_instance.cards.keys()) if host_agent_instance else []
         return JSONResponse({
@@ -151,27 +161,8 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
             "agents": agent_names,
         })
 
-    # Create a combined Starlette app that mounts both:
-    # - /health is a direct route (health check)
-    # - /api/* routes go to FastAPI (REST API for frontend)
-    # - Everything else goes to A2A server
-    combined_app = Starlette(
-        routes=[
-            Route("/health", health_handler, methods=["GET"]),
-            Mount("/api", app=api_app),
-            Mount("/", app=a2a_starlette),
-        ]
-    )
-
-    # Add CORS to the combined app
-    from starlette.middleware.cors import CORSMiddleware as StarletteCORS
-    combined_app.add_middleware(
-        StarletteCORS,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    main_app.include_router(get_api_router(), prefix="/api")
+    main_app.mount("/", a2a_starlette)
 
     # Log startup information
     logger.info(f"Starting Host Agent server on {host}:{port}")
@@ -181,7 +172,7 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
     logger.info(f"  - A2A Protocol: http://{host}:{port}/")
     logger.info(f"  - Health Check: http://{host}:{port}/health")
 
-    uvicorn.run(combined_app, host=host, port=port)
+    uvicorn.run(main_app, host=host, port=port)
 
 
 @click.command()

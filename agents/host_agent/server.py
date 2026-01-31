@@ -10,7 +10,7 @@ import logging
 import uuid
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -90,35 +90,11 @@ def set_dependencies(host_agent, runner, session_svc):
     session_service = session_svc
 
 
-def create_api_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
-    
-    app = FastAPI(
-        title="Host Agent API",
-        description="REST API for the Support Agent Host - routes tickets through support agents",
-        version="1.0.0",
-    )
+def get_api_router() -> APIRouter:
+    """Return the API router. Include with prefix='/api' so /api/chat, /api/chat/stream work in Docker."""
+    router = APIRouter()
 
-    # Add CORS middleware for frontend access
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5174",
-            "*",  # Allow all origins in development - restrict in production
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # --- Endpoint Definitions ---
-
-    @app.get("/agents", response_model=list[AgentInfo])
+    @router.get("/agents", response_model=list[AgentInfo])
     async def list_agents():
         """List all connected remote agents."""
         if not host_agent_instance:
@@ -133,7 +109,7 @@ def create_api_app() -> FastAPI:
             for card in host_agent_instance.cards.values()
         ]
 
-    @app.post("/chat", response_model=SendMessageResponse)
+    @router.post("/chat", response_model=SendMessageResponse)
     async def send_message(request: SendMessageRequest):
         """
         Send a message to the host agent and get a response.
@@ -219,7 +195,7 @@ def create_api_app() -> FastAPI:
             agents_used=agents_used,
         )
 
-    @app.get("/chat/stream")
+    @router.get("/chat/stream")
     async def send_message_stream(message: str, conversation_id: str | None = None):
         """
         Send a message and stream the response using Server-Sent Events (SSE).
@@ -324,7 +300,7 @@ def create_api_app() -> FastAPI:
             }
         )
 
-    @app.post("/agents/register", response_model=RegisterAgentResponse)
+    @router.post("/agents/register", response_model=RegisterAgentResponse)
     async def register_agent(request: RegisterAgentRequest):
         """Register a new remote agent by URL."""
         if not host_agent_instance:
@@ -364,8 +340,21 @@ def create_api_app() -> FastAPI:
                 error=str(e),
             )
 
+    return router
+
+
+def create_api_app() -> FastAPI:
+    """Standalone FastAPI app (for backward compatibility)."""
+    app = FastAPI(title="Host Agent API", version="1.0.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.include_router(get_api_router(), prefix="/api")
     return app
 
 
-# Create the API app instance
 api_app = create_api_app()

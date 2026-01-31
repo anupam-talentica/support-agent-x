@@ -23,6 +23,9 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.2.0",
+    # Memory (mem0) - uses ChromaDB from RAG dependencies
+    "mem0ai>=0.1.0",
+    "openai>=1.0.0",
 ]
 
 [project.optional-dependencies]

@@ -242,7 +242,7 @@ services:
         echo 'Waiting for Host agent to be ready...' &&
         sleep 5 &&
         echo 'Starting UI...' &&
-        gunicorn --bind 0.0.0.0:12000 ui.main:me
+        gunicorn --bind 0.0.0.0:12000 --timeout 120 ui.main:me
       "
     restart: unless-stopped
 

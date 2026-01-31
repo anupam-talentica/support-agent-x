@@ -1,5 +1,6 @@
 """Planner Agent - Creates execution plans and routes tasks to appropriate agents."""
 
+import asyncio
 import logging
 import os
 import uuid
@@ -9,11 +10,13 @@ import httpx
 
 from a2a.client import A2ACardResolver
 from a2a.types import (
+    GetTaskRequest,
     MessageSendParams,
     SendMessageRequest,
     SendMessageResponse,
     SendMessageSuccessResponse,
     Task,
+    TaskQueryParams,
 )
 from google.adk import Agent
 from google.adk.agents.callback_context import CallbackContext
@@ -36,7 +39,7 @@ class PlannerAgent:
         self, remote_agent_addresses: list[str]
     ) -> None:
         """Asynchronously initialize connections to remote agents."""
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             for address in remote_agent_addresses:
                 card_resolver = A2ACardResolver(client, address)
                 try:
@@ -198,23 +201,30 @@ class PlannerAgent:
 
         task_obj = send_response.root.result
 
-        # Wait for task completion and collect artifacts
+        # Wait for task completion by polling get_task
         result_parts = []
-        async for update in client.agent_client.get_task_updates(task_obj.id):
-            if update.root.type == 'task_artifact_update':
-                if hasattr(update.root, 'artifact') and update.root.artifact:
-                    result_parts.append(update.root.artifact)
-            elif update.root.type == 'task_status_update':
-                if hasattr(update.root, 'status') and update.root.status == 'completed':
-                    break
+        while True:
+            get_request = GetTaskRequest(
+                id=str(uuid.uuid4()),
+                params=TaskQueryParams(id=task_obj.id, historyLength=10),
+            )
+            task_response = await client.agent_client.get_task(get_request)
 
-        # Extract text from artifacts
+            if hasattr(task_response.root, 'result'):
+                current_task = task_response.root.result
+                if current_task.status.state == 'completed':
+                    result_parts = current_task.artifacts or []
+                    break
+                if current_task.status.state in ('failed', 'canceled'):
+                    break
+            await asyncio.sleep(0.5)
+
+        # Extract text from artifacts (same structure as host_agent)
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    if part.type == 'text':
-                        result_text += part.text + '\n'
+                    result_text += part.root.text + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}
 

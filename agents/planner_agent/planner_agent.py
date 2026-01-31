@@ -1,21 +1,15 @@
 """Planner Agent - Creates execution plans and routes tasks to appropriate agents."""
 
-import os
-import uuid
-
 import logging
 import os
 import uuid
-
 from typing import Any
 
 import httpx
 
 from a2a.client import A2ACardResolver
 from a2a.types import (
-    AgentCard,
     MessageSendParams,
-    Part,
     SendMessageRequest,
     SendMessageResponse,
     SendMessageSuccessResponse,
@@ -97,13 +91,14 @@ class PlannerAgent:
         **Core Directives:**
 
         * **Execution Planning:** Analyze the normalized ticket information and create an execution plan that determines:
-          1. Which agents need to be invoked (Intent Classification, Response Synthesis)
+          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Response Synthesis)
           2. The sequence of agent invocations
           3. Any parallel or async operations
 
         * **Fixed Routing Sequence:** Always route tickets in this exact order:
           1. First, send the ticket to the "Intent Classification Agent" for classification
-          2. Then, send the classified ticket information to the "Response Agent" to generate a human-readable response
+          2. Then, send the ticket query to the "RAG Agent" to retrieve relevant knowledge from documents
+          3. Finally, send the classified ticket information and retrieved knowledge to the "Response Agent" to generate a human-readable response
 
         * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names.
 
@@ -117,8 +112,9 @@ class PlannerAgent:
         **Routing Flow:**
         1. Receive normalized ticket → Create execution plan
         2. Route to Intent Classification Agent → Get classification
-        3. Route to Response Agent with classification → Get final response
-        4. Return aggregated response
+        3. Route to RAG Agent with ticket query → Get relevant knowledge documents
+        4. Route to Response Agent with classification + retrieved knowledge → Get final response
+        5. Return aggregated response
         """
 
     def before_model_callback(

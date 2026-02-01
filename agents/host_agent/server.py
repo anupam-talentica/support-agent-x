@@ -10,14 +10,27 @@ import logging
 import uuid
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from google.genai import types
 
+from .observability import flush, trace_request, update_current_span
+
 
 logger = logging.getLogger(__name__)
+
+# Header sent by React UI for Langfuse user tracing (mobile number)
+USER_PHONE_HEADER = "x-user-phone"
+
+
+def _user_id_from_request(request: Request) -> str:
+    """Get user_id for Langfuse from X-User-Phone header (mobile number), else fallback."""
+    phone = request.headers.get(USER_PHONE_HEADER)
+    if phone and phone.strip():
+        return phone.strip()
+    return "api_user"
 
 
 # --- Pydantic Models for REST API ---
@@ -110,82 +123,100 @@ def get_api_router() -> APIRouter:
         ]
 
     @router.post("/chat", response_model=SendMessageResponse)
-    async def send_message(request: SendMessageRequest):
+    async def send_message(request: SendMessageRequest, req: Request):
         """
         Send a message to the host agent and get a response.
-        
+
         The host agent will route the message through the appropriate support agents
         (Ingestion Agent → Response Agent) and return the final response.
         """
         if not host_agent_instance or not runner_instance or not session_service:
             raise HTTPException(status_code=503, detail="Host agent not initialized")
-        
+
         # Generate IDs
         message_id = str(uuid.uuid4())
         conversation_id = request.conversation_id or str(uuid.uuid4())
-        
-        # Get or create session
-        session = await session_service.get_session(
-            app_name='Host Agent',
-            user_id='api_user',
+        user_id = _user_id_from_request(req)
+
+        with trace_request(
+            name="rest-chat",
             session_id=conversation_id,
-        )
-        if session is None:
-            session = await session_service.create_session(
+            user_id=user_id,
+            input_data={"message": request.message[:2000], "message_id": message_id},
+            metadata={"source": "rest", "conversation_id": conversation_id, "user_phone": user_id},
+        ):
+            # Get or create session (user_id = mobile for per-user sessions)
+            session = await session_service.get_session(
                 app_name='Host Agent',
-                user_id='api_user',
+                user_id=user_id,
                 session_id=conversation_id,
             )
-        
-        # Create the message content
-        content = types.Content(
-            parts=[types.Part.from_text(text=request.message)],
-            role='user'
-        )
-        
-        # Track which agents were used
-        agents_used = []
-        response_parts = []
-        status = "completed"
-        
-        try:
-            async for event in runner_instance.run_async(
-                user_id='api_user',
-                session_id=conversation_id,
-                new_message=content,
-            ):
-                # Track function calls (agent delegations)
-                if event.get_function_calls():
-                    for fc in event.get_function_calls():
-                        if fc.name == 'send_message' and fc.args:
-                            agent_name = fc.args.get('agent_name')
-                            if agent_name and agent_name not in agents_used:
-                                agents_used.append(agent_name)
-                
-                # Extract text from event content
-                if event.content and event.content.parts:
-                    for part in event.content.parts:
-                        if part.text:
-                            response_parts.append(part.text)
-                
-                # Check if this is the final response
-                if event.is_final_response():
-                    break
-                    
-        except Exception as e:
-            logger.error(f'Error processing message: {e}')
-            return SendMessageResponse(
-                success=False,
-                message_id=message_id,
-                conversation_id=conversation_id,
-                response=f"Error processing request: {str(e)}",
-                status="failed",
-                agents_used=agents_used,
+            if session is None:
+                session = await session_service.create_session(
+                    app_name='Host Agent',
+                    user_id=user_id,
+                    session_id=conversation_id,
+                )
+
+            # Create the message content
+            content = types.Content(
+                parts=[types.Part.from_text(text=request.message)],
+                role='user'
             )
-        
-        # Combine all response parts
-        response_text = '\n'.join(response_parts) if response_parts else 'No response generated'
-        
+
+            # Track which agents were used
+            agents_used = []
+            response_parts = []
+            status = "completed"
+
+            try:
+                async for event in runner_instance.run_async(
+                    user_id=user_id,
+                    session_id=conversation_id,
+                    new_message=content,
+                ):
+                    # Track function calls (agent delegations)
+                    if event.get_function_calls():
+                        for fc in event.get_function_calls():
+                            if fc.name == 'send_message' and fc.args:
+                                agent_name = fc.args.get('agent_name')
+                                if agent_name and agent_name not in agents_used:
+                                    agents_used.append(agent_name)
+
+                    # Extract text from event content
+                    if event.content and event.content.parts:
+                        for part in event.content.parts:
+                            if part.text:
+                                response_parts.append(part.text)
+
+                    # Check if this is the final response
+                    if event.is_final_response():
+                        break
+
+            except Exception as e:
+                logger.error(f'Error processing message: {e}')
+                update_current_span(
+                    output={"error": str(e), "status": "failed"},
+                    metadata={"agents_used": agents_used},
+                )
+                flush()
+                return SendMessageResponse(
+                    success=False,
+                    message_id=message_id,
+                    conversation_id=conversation_id,
+                    response=f"Error processing request: {str(e)}",
+                    status="failed",
+                    agents_used=agents_used,
+                )
+
+            # Combine all response parts
+            response_text = '\n'.join(response_parts) if response_parts else 'No response generated'
+            update_current_span(
+                output={"response_preview": response_text[:500], "status": status, "agents_used": agents_used},
+                metadata={"agents_used": agents_used},
+            )
+            flush()
+
         return SendMessageResponse(
             success=True,
             message_id=message_id,
@@ -196,7 +227,7 @@ def get_api_router() -> APIRouter:
         )
 
     @router.get("/chat/stream")
-    async def send_message_stream(message: str, conversation_id: str | None = None):
+    async def send_message_stream(req: Request, message: str, conversation_id: str | None = None):
         """
         Send a message and stream the response using Server-Sent Events (SSE).
         
@@ -209,87 +240,102 @@ def get_api_router() -> APIRouter:
         """
         if not host_agent_instance or not runner_instance or not session_service:
             raise HTTPException(status_code=503, detail="Host agent not initialized")
-        
+
+        user_id = _user_id_from_request(req)
         conv_id = conversation_id or str(uuid.uuid4())
         message_id = str(uuid.uuid4())
-        
+
         async def event_generator() -> AsyncGenerator[str, None]:
-            # Get or create session
-            session = await session_service.get_session(
-                app_name='Host Agent',
-                user_id='api_user',
+            with trace_request(
+                name="rest-chat-stream",
                 session_id=conv_id,
-            )
-            if session is None:
-                session = await session_service.create_session(
+                user_id=user_id,
+                input_data={"message": message[:2000], "message_id": message_id},
+                metadata={"source": "rest-stream", "conversation_id": conv_id, "user_phone": user_id},
+            ):
+                # Get or create session (user_id = mobile for per-user sessions)
+                session = await session_service.get_session(
                     app_name='Host Agent',
-                    user_id='api_user',
+                    user_id=user_id,
                     session_id=conv_id,
                 )
-            
-            # Create the message content
-            content = types.Content(
-                parts=[types.Part.from_text(text=message)],
-                role='user'
-            )
-            
-            # Track agents used
-            agents_used = []
-            
-            # Send initial status
-            yield f"event: status\ndata: {json.dumps({'status': 'processing', 'message': 'Processing your request...'})}\n\n"
-            
-            try:
-                async for event in runner_instance.run_async(
-                    user_id='api_user',
-                    session_id=conv_id,
-                    new_message=content,
-                ):
-                    # Send status updates for non-final events
-                    if not event.is_final_response():
-                        if event.get_function_calls():
-                            # Agent is calling a tool/function
-                            for fc in event.get_function_calls():
-                                if fc.name == 'send_message' and fc.args:
-                                    agent_name = fc.args.get('agent_name', 'unknown')
-                                    if agent_name not in agents_used:
-                                        agents_used.append(agent_name)
-                                    yield f"event: agent\ndata: {json.dumps({'agent': agent_name, 'status': 'delegating'})}\n\n"
-                        elif event.content and event.content.parts:
-                            for part in event.content.parts:
-                                if part.text:
-                                    yield f"event: status\ndata: {json.dumps({'status': 'working', 'message': part.text[:200]})}\n\n"
-                    else:
-                        # Final response - send the message event
-                        response_text = ''
-                        if event.content and event.content.parts:
-                            for part in event.content.parts:
-                                if part.text:
-                                    response_text += part.text + '\n'
-                        
-                        final_response = {
-                            'success': True,
-                            'message_id': message_id,
-                            'conversation_id': conv_id,
-                            'response': response_text.strip(),
-                            'status': 'completed',
-                            'agents_used': agents_used,
-                        }
-                        yield f"event: message\ndata: {json.dumps(final_response)}\n\n"
-                        break
-            except Exception as e:
-                logger.error(f'Error in stream: {e}')
-                error_response = {
-                    'success': False,
-                    'message_id': message_id,
-                    'conversation_id': conv_id,
-                    'error': str(e),
-                    'status': 'failed',
-                    'agents_used': agents_used,
-                }
-                yield f"event: error\ndata: {json.dumps(error_response)}\n\n"
-            
-            yield f"event: done\ndata: {json.dumps({'conversation_id': conv_id})}\n\n"
+                if session is None:
+                    session = await session_service.create_session(
+                        app_name='Host Agent',
+                        user_id=user_id,
+                        session_id=conv_id,
+                    )
+
+                # Create the message content
+                content = types.Content(
+                    parts=[types.Part.from_text(text=message)],
+                    role='user'
+                )
+
+                # Track agents used
+                agents_used = []
+
+                # Send initial status
+                yield f"event: status\ndata: {json.dumps({'status': 'processing', 'message': 'Processing your request...'})}\n\n"
+
+                try:
+                    async for event in runner_instance.run_async(
+                        user_id=user_id,
+                        session_id=conv_id,
+                        new_message=content,
+                    ):
+                        # Send status updates for non-final events
+                        if not event.is_final_response():
+                            if event.get_function_calls():
+                                # Agent is calling a tool/function
+                                for fc in event.get_function_calls():
+                                    if fc.name == 'send_message' and fc.args:
+                                        agent_name = fc.args.get('agent_name', 'unknown')
+                                        if agent_name not in agents_used:
+                                            agents_used.append(agent_name)
+                                        yield f"event: agent\ndata: {json.dumps({'agent': agent_name, 'status': 'delegating'})}\n\n"
+                            elif event.content and event.content.parts:
+                                for part in event.content.parts:
+                                    if part.text:
+                                        yield f"event: status\ndata: {json.dumps({'status': 'working', 'message': part.text[:200]})}\n\n"
+                        else:
+                            # Final response - send the message event
+                            response_text = ''
+                            if event.content and event.content.parts:
+                                for part in event.content.parts:
+                                    if part.text:
+                                        response_text += part.text + '\n'
+
+                            final_response = {
+                                'success': True,
+                                'message_id': message_id,
+                                'conversation_id': conv_id,
+                                'response': response_text.strip(),
+                                'status': 'completed',
+                                'agents_used': agents_used,
+                            }
+                            update_current_span(
+                                output={"response_preview": response_text[:500], "agents_used": agents_used},
+                                metadata={"agents_used": agents_used},
+                            )
+                            flush()
+                            yield f"event: message\ndata: {json.dumps(final_response)}\n\n"
+                            break
+                except Exception as e:
+                    logger.error(f'Error in stream: {e}')
+                    update_current_span(output={"error": str(e), "status": "failed"}, metadata={"agents_used": agents_used})
+                    flush()
+                    error_response = {
+                        'success': False,
+                        'message_id': message_id,
+                        'conversation_id': conv_id,
+                        'error': str(e),
+                        'status': 'failed',
+                        'agents_used': agents_used,
+                    }
+                    yield f"event: error\ndata: {json.dumps(error_response)}\n\n"
+
+                yield f"event: done\ndata: {json.dumps({'conversation_id': conv_id})}\n\n"
         
         return StreamingResponse(
             event_generator(),

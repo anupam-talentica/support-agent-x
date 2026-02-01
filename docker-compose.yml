@@ -177,6 +177,7 @@ services:
       REASONING_AGENT_URL: http://reasoning_agent:10014
       RAG_AGENT_URL: http://rag_agent:10012
       RESPONSE_AGENT_URL: http://response_agent:10007
+      MEMORY_AGENT_URL: http://memory_agent:10005
       APP_URL: http://planner_agent:10002
     ports:
       - "10002:10002"
@@ -192,6 +193,8 @@ services:
       rag_agent:
         condition: service_started
       response_agent:
+        condition: service_started
+      memory_agent:
         condition: service_started
     networks:
       - support_agents_network
@@ -220,6 +223,7 @@ services:
       LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       INGESTION_AGENT_URL: http://ingestion_agent:10001
       PLANNER_AGENT_URL: http://planner_agent:10002
+      MEMORY_AGENT_URL: http://memory_agent:10005
       APP_URL: http://host_agent:8083
     ports:
       - "8083:8083"
@@ -276,6 +280,37 @@ services:
         echo 'Starting UI...' &&
         gunicorn --bind 0.0.0.0:12000 --timeout 120 ui.main:me
       "
+    restart: unless-stopped
+
+  # Memory Agent - Port 10005
+  memory_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_memory
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CHROMA_HOST: ${CHROMA_HOST:-host.docker.internal}
+      CHROMA_PORT: ${CHROMA_PORT:-8000}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://memory_agent:10005
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "10005:10005"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.memory_agent.__main__ --host 0.0.0.0 --port 10005
     restart: unless-stopped
 
 volumes:

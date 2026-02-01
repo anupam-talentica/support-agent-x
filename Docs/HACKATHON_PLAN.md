@@ -105,7 +105,8 @@ flowchart TD
     Observability --> AppDB
     
     RAGAgent --> VectorDB[(ChromaDB Vector Store)]
-    MemoryAgent --> MemoryDB[(SQLite Memory DB<br/>Episodic/Working/Semantic)]
+    MemoryAgent --> VectorDB
+    MemoryAgent --> MemoryDB[(SQLite: mem0 history<br/>+ Episodic/Working/Semantic)]
     
     style AppDB fill:#e1f5ff
     style MemoryDB fill:#fff4e1
@@ -520,7 +521,7 @@ support_agents/
 │   ├── ingestion_agent/ (port 10001)
 │   ├── planner_agent/ (port 10002)
 │   ├── intent_agent/ (port 10003)
-│   ├── rag_agent/ (port 10004)
+│   ├── rag_agent/ (port 10012)
 │   │   ├── rag_agent.py
 │   │   ├── rag_mcp.py
 │   │   ├── document_processor.py
@@ -531,7 +532,7 @@ support_agents/
 │   │   ├── memory_schema.py ✅ COMPLETED
 │   │   └── scripts/
 │   │       └── init_memory_db.py ✅ COMPLETED
-│   ├── reasoning_agent/ (port 10006)
+│   ├── reasoning_agent/ (port 10014)
 │   ├── response_agent/ (port 10007)
 │   └── guardrails_agent/ (port 10008)
 ├── database/ ✅ COMPLETED

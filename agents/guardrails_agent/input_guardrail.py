@@ -4,10 +4,9 @@ Validates and optionally sanitizes text before it is sent to agents.
 Covers length limits, prompt-injection patterns, basic sanitization,
 and optional LLM-based classification.
 
-**Allowed topics (enforced by LLM when use_llm=True):**
-- Billing – payments, refunds, invoices
-- Account – login, profile, security
-- Tickets – check status or create a new request (for issues only; not flight/train booking)
+**Allowed scope (enforced by LLM when use_llm=True): Ecommerce domain**
+- Anything related to ecommerce is allowed: Billing (payments, refunds, returns, invoices), Account, Orders, Products, Shipping, Coupons, Support tickets for ecommerce issues.
+- Rejected only: non-ecommerce topics (e.g. travel booking), prompt injection, harmful content.
 """
 
 import re
@@ -209,9 +208,9 @@ async def validate_input_with_llm(
 def _user_facing_reason_for_category(category: str) -> str:
     """Return a user-friendly reason why the request could not be processed."""
     reasons = {
-        "off_topic": "Your request could not be processed because this chat only handles Billing (payments, refunds, invoices), Account (login, profile, security), and Support tickets (check status or create a request for an issue). We don’t handle flight or train booking, travel reservations, or other topics. Please ask about one of the supported areas.",
-        "prompt_injection": "Your request could not be processed because it contains instructions this chat is not designed to follow. Please ask only about billing, your account, or support tickets and we’ll be happy to help.",
-        "harmful": "Your request could not be processed because it appears to contain content that we cannot assist with. Please rephrase and limit your question to billing, account, or support ticket issues.",
-        "other": "Your request could not be processed. This chat supports only Billing (payments, refunds, invoices), Account (login, profile, security), and Support tickets (status or new request for an issue). Please rephrase your message accordingly.",
+        "off_topic": "Your request could not be processed because this chat supports Ecommerce-related questions only (orders, products, returns, refunds, billing, account, support). We don’t handle flight or train booking, travel, or other non-ecommerce topics. Please ask about your orders, account, or support.",
+        "prompt_injection": "Your request could not be processed because it contains instructions this chat is not designed to follow. Please ask only about your orders, account, or ecommerce support and we’ll be happy to help.",
+        "harmful": "Your request could not be processed because it appears to contain content that we cannot assist with. Please rephrase and limit your question to ecommerce (orders, products, returns, billing, account, or support).",
+        "other": "Your request could not be processed. This chat supports Ecommerce-related questions only (orders, products, returns, refunds, billing, account, support). Please rephrase your message accordingly.",
     }
     return reasons.get(category, reasons["other"])

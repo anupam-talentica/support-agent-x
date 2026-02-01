@@ -1,0 +1,74 @@
+[
+  {
+    "incident_id": "INC-2025-001",
+    "query_text": "Customer was charged twice for the same order when they clicked Place Order twice because the page was slow. They want one order cancelled and refunded.",
+    "resolution": "Verified duplicate order in system (same cart, same payment method, within 2 minutes). Refunded the duplicate order in full. Advised customer to wait for confirmation before refreshing. No need to return duplicate shipment if both had already shipped—customer could keep or donate second set.",
+    "outcome": "resolved",
+    "tags": ["duplicate_charge", "double_submit", "refund", "checkout"],
+    "user_id": null,
+    "metadata": { "order_interval_seconds": 90, "both_orders_shipped": false }
+  },
+  {
+    "incident_id": "INC-2025-002",
+    "query_text": "Customer in EU received wrong item (different size). They want the correct size and a prepaid return label for the wrong item.",
+    "resolution": "Confirmed wrong item via photo and packing slip. Created replacement order for correct size at no charge. Sent prepaid return label for wrong item. Customer returned within 10 days; replacement shipped same week. No restocking fee.",
+    "outcome": "resolved",
+    "tags": ["wrong_item", "EU", "replacement", "prepaid_return", "international"],
+    "user_id": null,
+    "metadata": { "region": "EU", "prepaid_label_provided": true }
+  },
+  {
+    "incident_id": "INC-2025-003",
+    "query_text": "Customer's coupon did not apply at checkout but the banner said it was valid. They have a screenshot of the banner and their cart met the minimum.",
+    "resolution": "Support verified coupon was valid and cart met conditions. Placed order on behalf of customer with discount applied manually, then sent payment link for the discounted amount. Alternatively, we can refund the discount amount after order if already placed at full price. Customer chose manual order; completed same day.",
+    "outcome": "resolved",
+    "tags": ["coupon", "checkout", "manual_discount", "promotion"],
+    "user_id": null,
+    "metadata": { "discount_type": "percentage", "manual_application": true }
+  },
+  {
+    "incident_id": "INC-2025-004",
+    "query_text": "Customer wants to change delivery address but order already shipped. Carrier shows in transit. Can we redirect the package?",
+    "resolution": "Contacted carrier (FedEx) with customer's new address. Carrier allowed one-time address correction for a fee; we paid the fee and package was redirected. Customer received at new address. We informed customer that not all carriers or services support redirection and future requests may not be possible.",
+    "outcome": "resolved",
+    "tags": ["address_change", "after_ship", "carrier_redirect", "FedEx"],
+    "user_id": null,
+    "metadata": { "carrier": "FedEx", "redirect_fee_paid_by": "company" }
+  },
+  {
+    "incident_id": "INC-2025-005",
+    "query_text": "Gift card was purchased but recipient says code doesn't work. Sender has receipt; code was forwarded by email.",
+    "resolution": "Checked gift card status: not activated (batch was delayed). We manually activated the card and confirmed balance. Sent new code to sender to forward to recipient. Advised to use the new code; old code was deactivated to avoid confusion.",
+    "outcome": "resolved",
+    "tags": ["gift_card", "activation", "not_working", "manual_activation"],
+    "user_id": null,
+    "metadata": { "issue": "delayed_activation" }
+  },
+  {
+    "incident_id": "INC-2025-006",
+    "query_text": "Customer in UK paid in GBP but was charged in USD by mistake. They want the correct currency and refund of the difference.",
+    "resolution": "Verified store was set to UK/GBP but payment went through in USD (checkout bug). We refunded the USD charge in full and sent a new payment link in GBP for the same order. Customer paid in GBP; order shipped. We logged the bug for engineering.",
+    "outcome": "resolved",
+    "tags": ["currency", "GBP", "USD", "wrong_charge", "refund", "international"],
+    "user_id": null,
+    "metadata": { "region": "UK", "refund_full_then_recharge": true }
+  },
+  {
+    "incident_id": "INC-2025-007",
+    "query_text": "Customer never received order confirmation email but their card was charged. They need to know if the order was placed and get the order details.",
+    "resolution": "Looked up order by card last four and amount and date. Found order; status was 'confirmed.' Resent order confirmation and tracking (order had already shipped). Added customer email to suppression list check—they had unsubscribed from transactional emails by mistake; we re-enabled order emails for their account.",
+    "outcome": "resolved",
+    "tags": ["no_confirmation", "charged", "lookup", "resend_email", "transactional_email"],
+    "user_id": null,
+    "metadata": { "cause": "unsubscribed_from_transactional" }
+  },
+  {
+    "incident_id": "INC-2025-008",
+    "query_text": "Customer ordered a pre-order item. Release date was pushed back. They want to cancel and get refund now instead of waiting.",
+    "resolution": "Pre-order had not yet charged (we charge at ship). Cancelled the pre-order and confirmed no charge. If they had been charged (some pre-orders charge at order), we would have refunded in full. Customer was able to re-order when new date was announced.",
+    "outcome": "resolved",
+    "tags": ["pre_order", "delay", "cancellation", "refund"],
+    "user_id": null,
+    "metadata": { "charge_timing": "at_ship" }
+  }
+]

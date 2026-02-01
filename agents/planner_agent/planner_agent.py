@@ -96,15 +96,16 @@ class PlannerAgent:
         **Core Directives:**
 
         * **Execution Planning:** Analyze the normalized ticket information and create an execution plan that determines:
-          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Response Synthesis)
+          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Memory, Reasoning/Correlation, Response Synthesis, Guardrails)
           2. The sequence of agent invocations
-          3. Any parallel or async operations
+          3. Parallel execution: RAG and Memory must be invoked simultaneously after Intent
 
         * **Fixed Routing Sequence:** Always route tickets in this exact order:
-          1. First, send the ticket to the "Intent Classification Agent" for classification
-          2. Then, send the classification result AND original ticket to the "Reasoning Agent" for fact analysis and reasoning
-          3. Then, send the ticket query to the "RAG Agent" to retrieve relevant knowledge from documents
-          4. Finally, send the classification, reasoning analysis, and retrieved knowledge to the "Response Agent" to generate a human-readable response
+          1. First, send the ticket to the "Intent Classification Agent" (or "Intent & Classification Agent") for classification
+          2. Then, in parallel, send the ticket query to BOTH the "RAG Agent" (Knowledge Retrieval) AND the "Memory Agent" at the same time—invoke both before proceeding
+          3. Then, send the classification result, original ticket, RAG-retrieved knowledge, and Memory results to the "Reasoning Agent" (Reasoning/Correlation) for fact analysis and correlation
+          4. Then, send the classification, reasoning analysis, and retrieved knowledge (RAG + Memory) to the "Response Agent" (Response Synthesis) to generate a human-readable response
+          5. Finally, send the response to the "Guardrails Agent" (Guardrails & Policy) for safety checks; it returns the final response or escalates to human
 
         * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names.
 
@@ -118,10 +119,11 @@ class PlannerAgent:
         **Routing Flow:**
         1. Receive normalized ticket → Create execution plan
         2. Route to Intent Classification Agent → Get classification
-        3. Route to Reasoning Agent with classification + ticket → Get reasoning analysis
-        4. Route to RAG Agent with ticket query → Get relevant knowledge documents
-        5. Route to Response Agent with classification + reasoning + knowledge → Get final response
-        6. Return aggregated response
+        3. Route to RAG Agent and Memory Agent in parallel (same ticket/query to both) → Get knowledge documents and memory results
+        4. Route to Reasoning Agent with classification + ticket + RAG results + Memory results → Get reasoning analysis
+        5. Route to Response Agent with classification + reasoning + knowledge (RAG + Memory) → Get draft response
+        6. Route to Guardrails Agent with draft response → Get final response or escalation
+        7. Return final response (or escalation outcome)
         """
 
     def before_model_callback(

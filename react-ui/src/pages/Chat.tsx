@@ -120,14 +120,16 @@ Just type your question below.`;
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       console.error("Chat error:", error);
+      const reason =
+        error instanceof Error ? error.message : "Sorry, I couldn't get a response. Please try again.";
       toast({
         title: "Something went wrong",
-        description: "Please try again.",
+        description: reason,
         variant: "destructive",
       });
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: "Sorry, I couldn't get a response. Please try again.",
+        text: reason,
         sender: "bot",
         timestamp: new Date(),
       };

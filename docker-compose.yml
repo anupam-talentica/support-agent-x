@@ -27,12 +27,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_ingestion
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       APP_URL: http://ingestion_agent:10001
     ports:
@@ -53,6 +55,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_intent
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -80,6 +83,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_reasoning
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -107,6 +111,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_rag
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -138,12 +143,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_response
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       APP_URL: http://response_agent:10007
     ports:
@@ -165,6 +172,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_planner
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -213,6 +221,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_host
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -288,6 +297,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: support_agents_memory
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}

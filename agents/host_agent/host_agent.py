@@ -275,13 +275,14 @@ class HostAgent:
                     break
                 elif current_task.status.state in ['failed', 'canceled']:
                     break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.25)
 
-        # Extract text from artifacts
+        # Extract text from artifacts (parts may be Part(root=TextPart(...)) or bare TextPart)
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    result_text += part.root.text + '\n'
+                    part_root = getattr(part, 'root', part)
+                    result_text += (getattr(part_root, 'text', '') or '') + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}

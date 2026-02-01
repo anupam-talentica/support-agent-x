@@ -22,7 +22,7 @@ from a2a.types import (
 )
 from a2a.utils.errors import ServerError
 from database.connection import get_db
-from database.services import TicketService
+from database.services import TicketService, UserService
 from google.adk import Runner
 from google.genai import types
 
@@ -82,8 +82,14 @@ class IngestionExecutor(AgentExecutor):
                             # Try to parse JSON from response
                             ticket_data = self._extract_ticket_data(response_text)
                             
-                            # Create ticket in database
+                            # Create ticket in database (ensure default_user exists for FK)
                             with get_db() as db:
+                                if not UserService.get_user(db, 'default_user'):
+                                    UserService.create_user(
+                                        db, 'default_user',
+                                        email='default@support.local',
+                                        role='customer',
+                                    )
                                 ticket = TicketService.create_ticket(
                                     db,
                                     user_id='default_user',

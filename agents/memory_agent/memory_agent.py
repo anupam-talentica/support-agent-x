@@ -1,5 +1,6 @@
 """Memory Agent powered by mem0 for intelligent conversational memory."""
 
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -158,10 +159,18 @@ class Mem0MemoryAgent:
         # Build context message
         context_parts = [f"Ticket {ticket_id}: User reported issue - {query}"]
         
-        if classification:
-            intent_type = classification.get('incident_type', 'unknown')
-            urgency = classification.get('urgency', 'unknown')
-            context_parts.append(f"Classified as {intent_type} with {urgency} urgency")
+        if classification is not None:
+            # Planner may pass classification as JSON string; normalize to dict
+            if isinstance(classification, str):
+                try:
+                    parsed = json.loads(classification) if classification.strip() else {}
+                    classification = parsed if isinstance(parsed, dict) else {}
+                except (json.JSONDecodeError, AttributeError):
+                    classification = {}
+            if isinstance(classification, dict) and classification:
+                intent_type = classification.get('incident_type', 'unknown')
+                urgency = classification.get('urgency', 'unknown')
+                context_parts.append(f"Classified as {intent_type} with {urgency} urgency")
         
         if resolution:
             context_parts.append(f"Resolution: {resolution}")

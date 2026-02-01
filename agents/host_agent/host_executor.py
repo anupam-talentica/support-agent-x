@@ -1,6 +1,5 @@
 """Host Agent Executor - A2A bridge for host agent."""
 
-import asyncio
 import logging
 
 from typing import TYPE_CHECKING
@@ -26,6 +25,7 @@ from google.adk import Runner
 from google.genai import types
 
 from .observability import trace_request, update_current_span
+from agents.guardrails_agent import validate_input_with_llm, apply_output_guardrail
 
 
 if TYPE_CHECKING:
@@ -65,7 +65,6 @@ class HostExecutor(AgentExecutor):
             for p in new_message.parts:
                 if getattr(p, "text", None):
                     message_preview = (message_preview + " " + p.text).strip()[:2000]
-                    break
 
         with trace_request(
             name="a2a-execute",
@@ -91,15 +90,24 @@ class HostExecutor(AgentExecutor):
                             for part in event.content.parts
                             if (part.text or part.file_data or part.inline_data)
                         ]
+                        # Output guardrail: redact sensitive data before sending to user
+                        out_parts = []
+                        response_text = ''
+                        for part in parts:
+                            root = getattr(part, 'root', part)
+                            if isinstance(root, TextPart):
+                                out_result = apply_output_guardrail(root.text)
+                                out_parts.append(Part(root=TextPart(text=out_result.redacted_text)))
+                                response_text += out_result.redacted_text + '\n'
+                            else:
+                                out_parts.append(part)
+                        parts = out_parts
+                        response_text = response_text.strip()
 
-                        # Update task in database
+                        # Update task in database (with redacted response)
                         if hasattr(task_updater, 'task_id') and task_updater.task_id:
                             try:
                                 with get_db() as db:
-                                    response_text = ''
-                                    if parts and isinstance(parts[0], TextPart):
-                                        response_text = parts[0].text
-
                                     TaskService.update_task_status(
                                         db,
                                         task_id=task_updater.task_id,
@@ -117,9 +125,7 @@ class HostExecutor(AgentExecutor):
                             TaskState.completed, final=True
                         )
 
-                        response_preview = ''
-                        if parts and isinstance(parts[0], TextPart):
-                            response_preview = (parts[0].text or '')[:500]
+                        response_preview = (response_text or '')[:500]
                         update_current_span(
                             output={"status": "completed", "response_preview": response_preview},
                         )
@@ -150,7 +156,27 @@ class HostExecutor(AgentExecutor):
         event_queue: EventQueue,
     ):
         logger.debug('[host_agent] execute called with context: %s', context)
-        
+
+        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+
+        # Input guardrail: rule-based + LLM; validate text parts and build sanitized message
+        validated_parts = []
+        for part in context.message.parts:
+            root = getattr(part, 'root', part)
+            if isinstance(root, TextPart):
+                guardrail = await validate_input_with_llm(root.text)
+                if not guardrail.success:
+                    await updater.update_status(
+                        TaskState.failed,
+                        message=updater.new_agent_message([TextPart(text=guardrail.message)]),
+                        final=True,
+                    )
+                    logger.warning('[host_agent] guardrail rejected input: %s', guardrail.error_code)
+                    return
+                validated_parts.append(Part(root=TextPart(text=guardrail.sanitized_text or root.text)))
+            else:
+                validated_parts.append(part)
+
         # Create task in database
         try:
             with get_db() as db:
@@ -165,17 +191,12 @@ class HostExecutor(AgentExecutor):
             logger.error(f'Failed to create task in database: {e}')
 
         # Run the agent until either complete or the task is suspended.
-        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
-        # Immediately notify that the task is submitted.
         if not context.current_task:
             await updater.update_status(TaskState.submitted)
         await updater.update_status(TaskState.working)
         await self._process_request(
             types.UserContent(
-                parts=[
-                    convert_a2a_part_to_genai(part)
-                    for part in context.message.parts
-                ],
+                parts=[convert_a2a_part_to_genai(p) for p in validated_parts],
             ),
             context.context_id,
             updater,

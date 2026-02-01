@@ -33,6 +33,7 @@ export interface ChatMessagePayload {
 
 export interface SendMessageResponse {
   response: string;
+  success?: boolean;
   conversation_id?: string;
   agents_used?: string[];
 }
@@ -173,8 +174,17 @@ async function sendMessageHttp(message: string): Promise<SendMessageResponse> {
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API error: ${response.status} - ${errorText}`);
+    let reason = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body.detail) {
+        reason = typeof body.detail === "string" ? body.detail : body.detail.message || reason;
+      }
+    } catch {
+      const text = await response.text();
+      if (text) reason = text;
+    }
+    throw new Error(reason);
   }
 
   const data = await response.json();

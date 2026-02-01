@@ -4,7 +4,22 @@
  */
 
 // Configuration - update this to match your backend URL
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8083";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8083";
+
+/** Maps agent names (from backend) to user-facing generic status messages. Agent names are never shown. */
+const AGENT_TO_GENERIC_STATUS: Record<string, string> = {
+  "Ingestion Agent": "Processing your request...",
+  "Planner Agent": "Planning your response...",
+  "Intent Classification Agent": "Analyzing your request...",
+  "Intent Classification": "Analyzing your request...",
+  "RAG Agent": "Gathering relevant information...",
+  "Response Agent": "Preparing your response...",
+};
+
+function getGenericStatusForAgent(agentName: string): string {
+  return AGENT_TO_GENERIC_STATUS[agentName] ?? "Preparing your response...";
+}
 
 export interface ChatMessagePayload {
   role: "user" | "assistant";
@@ -26,121 +41,109 @@ export type OnAgentStatusChange = (status: string) => void;
 // Store conversation ID for multi-turn conversations
 let currentConversationId: string | null = null;
 
-/**
- * Send a message using Server-Sent Events (SSE) for real-time status updates.
- * This provides live updates as the host agent delegates to sub-agents.
- */
-function sendMessageWithSSE(
+/** Parse SSE stream manually for reliable handling of custom event types (EventSource can be flaky). */
+async function sendMessageWithSSE(
   message: string,
   onStatusChange?: OnAgentStatusChange
 ): Promise<SendMessageResponse> {
-  return new Promise((resolve, reject) => {
-    // Build query params
-    const params = new URLSearchParams({ message });
-    if (currentConversationId) {
-      params.append("conversation_id", currentConversationId);
-    }
+  const params = new URLSearchParams({ message });
+  if (currentConversationId) {
+    params.append("conversation_id", currentConversationId);
+  }
 
-    const eventSource = new EventSource(
-      `${API_BASE_URL}/api/chat/stream?${params.toString()}`
-    );
+  const response = await fetch(
+    `${API_BASE_URL}/api/chat/stream?${params.toString()}`,
+    { headers: { Accept: "text/event-stream" } }
+  );
 
-    let agentsUsed: string[] = [];
+  if (!response.ok) {
+    throw new Error(`Stream failed: ${response.status}`);
+  }
 
-    // Handle status events (processing updates)
-    eventSource.addEventListener("status", (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const statusMessage = data.message || data.status || "Processing...";
-        onStatusChange?.(statusMessage);
-      } catch {
-        // If not JSON, use raw data
-        onStatusChange?.(event.data);
-      }
-    });
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response body");
+  }
 
-    // Handle agent delegation events
-    eventSource.addEventListener("agent", (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        const agentName = data.agent || "Agent";
-        if (!agentsUsed.includes(agentName)) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let agentsUsed: string[] = [];
+  let resolved = false;
+  let result: SendMessageResponse | null = null;
+
+  const parseAndDispatch = (eventType: string, data: string) => {
+    try {
+      const parsed = JSON.parse(data);
+      if (eventType === "status") {
+        const msg = parsed.message || parsed.status || "Processing...";
+        onStatusChange?.(msg);
+      } else if (eventType === "agent") {
+        const agentName = parsed.agent || "";
+        if (agentName && !agentsUsed.includes(agentName)) {
           agentsUsed.push(agentName);
         }
-        onStatusChange?.(`Delegating to ${agentName}...`);
-      } catch {
-        onStatusChange?.("Delegating to agent...");
-      }
-    });
-
-    // Handle final message event
-    eventSource.addEventListener("message", (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        // Store conversation ID for subsequent messages
-        if (data.conversation_id) {
-          currentConversationId = data.conversation_id;
-        }
-
-        // Update agents used from response
-        if (data.agents_used) {
-          agentsUsed = data.agents_used;
-        }
-
-        resolve({
-          response: data.response || "No response received",
-          conversation_id: data.conversation_id,
+        onStatusChange?.(getGenericStatusForAgent(agentName));
+      } else if (eventType === "message") {
+        if (parsed.conversation_id)
+          currentConversationId = parsed.conversation_id;
+        if (parsed.agents_used) agentsUsed = parsed.agents_used;
+        resolved = true;
+        result = {
+          response: parsed.response || "No response received",
+          conversation_id: parsed.conversation_id,
           agents_used: agentsUsed,
-        });
-      } catch (e) {
-        reject(new Error(`Failed to parse response: ${e}`));
+        };
+      } else if (eventType === "error") {
+        throw new Error(parsed.error || "Server error occurred");
       }
-      eventSource.close();
-    });
-
-    // Handle error events from the server
-    eventSource.addEventListener("error", (event) => {
-      // Check if it's a custom error event with data
-      if (event instanceof MessageEvent && event.data) {
-        try {
-          const data = JSON.parse(event.data);
-          reject(new Error(data.error || "Server error occurred"));
-        } catch {
-          reject(new Error("Connection error occurred"));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        if (eventType === "status" || eventType === "agent") {
+          onStatusChange?.(data || "Processing...");
         }
       } else {
-        // Connection error
-        reject(new Error("Failed to connect to server"));
+        throw e;
       }
-      eventSource.close();
-    });
+    }
+  };
 
-    // Handle stream completion
-    eventSource.addEventListener("done", () => {
-      eventSource.close();
-    });
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
 
-    // Handle connection errors
-    eventSource.onerror = (error) => {
-      console.error("SSE connection error:", error);
-      // Only reject if we haven't already resolved
-      if (eventSource.readyState === EventSource.CLOSED) {
-        return; // Already handled
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    let eventType = "message";
+    let dataBuffer = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        const value = line.slice(5);
+        dataBuffer += (value.startsWith(" ") ? value.slice(1) : value) + "\n";
+      } else if (line.trim() === "" && dataBuffer) {
+        parseAndDispatch(eventType, dataBuffer.trim());
+        dataBuffer = "";
+        if (resolved) break;
       }
-      eventSource.close();
-      reject(new Error("Connection to server lost"));
-    };
-  });
+    }
+    if (resolved) break;
+  }
+
+  if (!resolved || !result) {
+    throw new Error("Stream ended without response");
+  }
+  return result;
 }
 
 /**
  * Fallback: Send a message using regular HTTP POST (no streaming).
  * Use this if SSE is not available or for simpler integration.
  */
-async function sendMessageHttp(
-  message: string
-): Promise<SendMessageResponse> {
+async function sendMessageHttp(message: string): Promise<SendMessageResponse> {
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
     headers: {

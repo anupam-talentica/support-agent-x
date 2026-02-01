@@ -1,0 +1,43 @@
+# Ignore Terraform cache and modules
+**/.terraform/*
+.terraform.lock.hcl
+
+# Ignore local state files and backups
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Ignore crash logs
+crash.log
+crash.*.log
+
+# Ignore variable files (unless you explicitly whitelist them)
+#*.tfvars
+#*.tfvars.json
+###!example.tfvars
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore Terraform plan files
+*.tfplan
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# Ignore system/editor files
+*.log
+*.log.*
+.DS_Store
+.vscode/
+.idea/
+*.iml
+
+# Ignore runtime/env files
+#*.env
+

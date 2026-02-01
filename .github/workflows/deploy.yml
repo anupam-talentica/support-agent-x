@@ -1,0 +1,38 @@
+# CI/CD Pipeline for support-agentx - to deploy on AWS EC2 (t4g.large) on push to devops-deployment branch 
+# GitHub Secrets -  EC2_HOST - EC2 public IP, EC2_SSH_KEY - Private SSH key (PEM), EC2_USER - SSH user (default: ubuntu)
+
+name: Deploy to EC2
+on:
+  push:
+    branches:
+      - devops-deployment
+      - main
+  workflow_dispatch:
+  #schedule:
+  #  - cron: "0 2 * * *"  # Runs daily at 02:00 UTC
+jobs:
+  Deploy_To_EC2:
+    name: Deploy Using Docker Compose on EC2
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/support-agent-x
+
+            # Ensure we're on main branch
+            git fetch --all
+            git checkout main
+            git reset --hard origin/main
+
+            # Pull latest code
+            git pull origin main
+
+            # Force rebuild and restart Docker Compose
+            docker compose down --remove-orphans
+            docker compose build --no-cache
+            docker compose up -d --force-recreate

@@ -34,6 +34,7 @@ RUN uv pip install --system \
     httpx>=0.27.0 \
     python-dotenv>=1.0.0 \
     click>=8.2.0 \
+    mem0ai>=0.1.0
     langfuse>=3.0.0
 
 # Install RAG dependencies

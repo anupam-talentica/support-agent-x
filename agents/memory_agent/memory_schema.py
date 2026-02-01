@@ -4,8 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, Text, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -22,7 +21,7 @@ class EpisodicMemory(Base):
     tags = Column(JSON, nullable=True)  # List of tags for categorization
     user_id = Column(String(255), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    metadata = Column(JSON, nullable=True)  # Additional context
+    extra_metadata = Column('metadata', JSON, nullable=True)  # Additional context (column name 'metadata' is reserved in Declarative API)
 
     # Indexes
     __table_args__ = (
@@ -69,7 +68,7 @@ class SemanticMemory(Base):
     last_accessed = Column(DateTime, default=datetime.utcnow, nullable=False)
     access_count = Column(Integer, default=0, nullable=False)
     relevance_score = Column(Integer, nullable=True)  # Average relevance score
-    metadata = Column(JSON, nullable=True)
+    extra_metadata = Column('metadata', JSON, nullable=True)  # Column name 'metadata' is reserved in Declarative API
 
     # Indexes
     __table_args__ = (

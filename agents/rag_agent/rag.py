@@ -3,19 +3,22 @@ RAG (Retrieval Augmented Generation) script using ChromaDB in client-server mode
 
 Prerequisites:
 1. Start ChromaDB server: chroma run --host localhost --port 8000 --path ./db
-2. Set OPENAI_API_KEY environment variable (for LLM responses)
+2. Set OPENAI_API_KEY environment variable (for LLM responses and query embeddings)
 3. Install dependencies: pip install -r requirements.txt
 
 Usage:
     python rag.py
 """
 
+import logging
 import os
 from typing import Optional
 
 import chromadb
 from chromadb.config import Settings
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class ChromaRAG:
@@ -25,7 +28,7 @@ class ChromaRAG:
         self,
         host: str = "localhost",
         port: int = 8000,
-        collection_name: str = "support-agent-x",
+        collection_name: str = "support-agent-x-openai",  # override via CHROMA_COLLECTION in .env
     ):
         """
         Initialize the RAG system.
@@ -54,8 +57,23 @@ class ChromaRAG:
             logger.error(f"On Mac, use 'host.docker.internal' as the host if ChromaDB is on the host machine.")
             raise
 
-        # Initialize OpenAI client for LLM responses
-        self.openai_client = OpenAI()
+        # Initialize OpenAI client for LLM and embeddings (must match ingest: text-embedding-3-small, 1536 dim)
+        api_key = os.getenv("OPENAI_API_KEY")
+        self.openai_client = OpenAI(api_key=api_key) if api_key else OpenAI()
+        self._embedding_model = "text-embedding-3-small"
+
+    def _embed_query(self, text: str) -> Optional[list[float]]:
+        """Compute query embedding via OpenAI to match ingest dimension (1536). Returns None if unavailable."""
+        if not os.getenv("OPENAI_API_KEY"):
+            logger.warning("OPENAI_API_KEY not set; RAG query will use Chroma default embedder (384 dim). Collection may expect 1536.")
+            return None
+        try:
+            r = self.openai_client.embeddings.create(model=self._embedding_model, input=[text])
+            if r.data:
+                return r.data[0].embedding
+        except Exception as e:
+            logger.warning("OpenAI embedding failed (%s); falling back to query_texts (384 dim). Expect 1536/384 mismatch if ingest used OpenAI.", e)
+        return None
 
     def add_documents(
         self,
@@ -91,6 +109,9 @@ class ChromaRAG:
         """
         Query the vector store for relevant documents.
 
+        Uses OpenAI embedding for the query when available so dimension matches
+        ingest (1536). Falls back to query_texts for 384-dim collections.
+
         Args:
             query_text: The query string
             n_results: Number of results to return
@@ -98,10 +119,17 @@ class ChromaRAG:
         Returns:
             Query results from ChromaDB
         """
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results,
-        )
+        embedding = self._embed_query(query_text)
+        if embedding is not None:
+            results = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=n_results,
+            )
+        else:
+            results = self.collection.query(
+                query_texts=[query_text],
+                n_results=n_results,
+            )
         return results
 
     def generate_response(

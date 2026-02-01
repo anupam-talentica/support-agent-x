@@ -23,6 +23,9 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.2.0",
+    # Memory (mem0) - uses ChromaDB from RAG dependencies
+    "mem0ai>=0.1.0",
+    "openai>=1.0.0",
     # Observability
     "langfuse>=3.0.0",
 ]
@@ -39,7 +42,9 @@ rag = [
     # RAG dependencies for future RAG agent implementation
     # Install with: pip install -e ".[rag]"
     # Note: chromadb requires onnxruntime which may not be available for Python 3.14
-    # If installation fails, see INSTALLATION_NOTES.md for workarounds
+    # ChromaDB conflicts with Pydantic 2.10+ (a2a-sdk/mcp need pydantic>=2.11).
+    # For ingest_rag_data.py only: use a separate venv with scripts/requirements-rag-ingest.txt
+    "pydantic-settings>=2.0.0",
     "langchain>=0.3.0",
     "langchain-google-genai>=2.1.5",
     "langgraph>=0.4.5",

@@ -70,6 +70,17 @@ Each test case maps to one of the four scenarios and validates the expected flow
 
 **Scenario:** The existing RAG knowledge base (policies + FAQs) cannot fully satisfy the answer, but based on the Memory agent's capability, the Memory agent helps solve the problem (past similar incident).
 
+### Prerequisites (required for this test case)
+
+The Memory Agent uses **mem0** for recall. To get a response **driven by Memory** (INC-2025-001 resolution), seed mem0 with past-resolved incidents **before** running Test Case 3:
+
+1. Ensure ChromaDB is running (e.g. `chroma run --host 0.0.0.0 --port 8000`) and `OPENAI_API_KEY` is set.
+2. From `support_agents` root, run:
+   ```bash
+   python scripts/seed_mem0_past_incidents.py
+   ```
+   This loads `training-docs/memory-agent-scenarios/past-resolved-incidents.json` (including INC-2025-001 duplicate-charge resolution) into mem0. Without this step, Memory may return "no similar past tickets" and the response will not cite the past incident.
+
 ### User Query
 
 > "I was charged twice for the same order when I clicked Place Order twice because the page was slow. Can you refund one of the charges?"
@@ -87,13 +98,13 @@ Each test case maps to one of the four scenarios and validates the expected flow
 
 ### Expected Outcome
 
-- User receives a **resolution path** that matches the **past incident** (INC-2025-001): verify duplicate, refund duplicate, and practical advice.
-- Source: Memory agent (Episodic Memory) — past-resolved-incidents.json, incident_id INC-2025-001.
+- User receives a **resolution path** that matches the **past incident** (INC-2025-001): verify duplicate, refund duplicate, and practical advice (e.g. wait for confirmation before refreshing).
+- **Source:** Memory agent (mem0) — seeded from `past-resolved-incidents.json`, incident_id INC-2025-001. The *final text* is still synthesized by the Response Agent, but it must **use** the Memory resolution (so the response is effectively "from" Memory).
 - No escalation required for answering; actual refund may be automated or require human execution depending on implementation.
 
 ### Training Doc Reference
 
-- **Memory:** `training-docs/memory-agent-scenarios/past-resolved-incidents.json` — `INC-2025-001` (duplicate charge, double submit, refund duplicate).
+- **Memory:** `training-docs/memory-agent-scenarios/past-resolved-incidents.json` — `INC-2025-001` (duplicate charge, double submit, refund duplicate). Load into mem0 via `python scripts/seed_mem0_past_incidents.py`.
 
 ---
 

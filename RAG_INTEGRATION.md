@@ -47,11 +47,12 @@ Add to your `.env` file:
 # RAG Agent URL (for Planner Agent to connect)
 RAG_AGENT_URL=http://localhost:10012
 
-# ChromaDB Server Connection (for RAG Agent)
+# ChromaDB Server Connection (for RAG Agent and ingest script)
 # When using Docker, use 'host.docker.internal' to connect to host machine
 CHROMA_HOST=host.docker.internal  # For Docker; use 'localhost' for local dev
 CHROMA_PORT=8000
-CHROMA_COLLECTION=support-agent-x
+# Collection: support-agent-x-openai (HTTP/OpenAI ingest) or support-agent-x (chromadb-package ingest)
+CHROMA_COLLECTION=support-agent-x-openai
 ```
 
 ### Agent Ports
@@ -129,7 +130,7 @@ from agents.rag_agent.rag import ChromaRAG
 rag = ChromaRAG(
     host="localhost",
     port=8000,
-    collection_name="support-agent-x"
+    collection_name="support-agent-x-openai"
 )
 
 # Query for relevant documents
@@ -171,7 +172,7 @@ print(response)
 ### No documents retrieved
 
 - Verify documents were added to ChromaDB
-- Check collection name matches: `CHROMA_COLLECTION=support-agent-x`
+- Check collection name matches: `CHROMA_COLLECTION=support-agent-x-openai-openai`
 - Test ChromaDB connection directly
 
 ## Success Criteria

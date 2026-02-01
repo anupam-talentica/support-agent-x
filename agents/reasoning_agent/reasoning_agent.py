@@ -24,8 +24,13 @@ async def check_component_health(tool_context: ToolContext) -> dict:
     Returns:
         A dictionary containing the health status of components.
     """
+    if not (HEALTH_CHECK_URL and HEALTH_CHECK_URL.strip()):
+        return {
+            'status': 'skipped',
+            'error': 'No health check URL configured (set HEALTH_CHECK_URL to enable)',
+        }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.get(HEALTH_CHECK_URL)
             response.raise_for_status()
             health_data = response.json()

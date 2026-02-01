@@ -165,8 +165,37 @@ services:
     command: python -m agents.response_agent.__main__ --host 0.0.0.0 --port 10007
     restart: unless-stopped
 
+  # Guardrails Agent - Port 10008
+  # Safety and confidence check on proposed responses (PASS/ESCALATE)
+  guardrails_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_guardrails
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://guardrails_agent:10008
+    ports:
+      - "10008:10008"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.guardrails_agent.__main__ --host 0.0.0.0 --port 10008
+    restart: unless-stopped
+
   # Planner Agent - Port 10002
-  # Depends on Intent, Reasoning, RAG, and Response agents being ready
+  # Depends on Intent, Reasoning, RAG, Response, and Guardrails agents being ready
   planner_agent:
     build:
       context: .
@@ -186,6 +215,7 @@ services:
       RAG_AGENT_URL: http://rag_agent:10012
       RESPONSE_AGENT_URL: http://response_agent:10007
       MEMORY_AGENT_URL: http://memory_agent:10005
+      GUARDRAILS_AGENT_URL: http://guardrails_agent:10008
       APP_URL: http://planner_agent:10002
     ports:
       - "10002:10002"
@@ -204,11 +234,13 @@ services:
         condition: service_started
       memory_agent:
         condition: service_started
+      guardrails_agent:
+        condition: service_started
     networks:
       - support_agents_network
     command: >
       sh -c "
-        echo 'Waiting for Intent, Reasoning, RAG, and Response agents to be ready...' &&
+        echo 'Waiting for Intent, Reasoning, RAG, Response, and Guardrails agents to be ready...' &&
         sleep 5 &&
         python -m agents.planner_agent.__main__ --host 0.0.0.0 --port 10002
       "

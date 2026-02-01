@@ -110,7 +110,7 @@ class PlannerAgent:
           2. Then, call `invoke_rag_and_memory_parallel(ticket_query, user_id)` to get RAG knowledge and Memory (similar tickets) in one parallel call. Use the normalized ticket text as ticket_query and an appropriate user_id (e.g. from ticket or 'all_users').
           3. Then, send the classification result, original ticket, RAG result (from rag_result), and Memory result (from memory_result) to the "Reasoning Agent" (Reasoning/Correlation) for fact analysis and correlation
           4. Then, send the classification, reasoning analysis, and retrieved knowledge (RAG + Memory) to the "Response Agent" (Response Synthesis) to generate a human-readable response
-          5. Return the Response Agent output as the final response to the user. (Guardrails is WIP and is skipped for now.)
+          5. If "Guardrails Agent" is in the available agents, send the Response Agent output (with brief context: ticket summary, that RAG/Memory were used) to the "Guardrails Agent" for safety and confidence check; return whatever the Guardrails Agent returns as the final response to the user. If Guardrails Agent is not available, return the Response Agent output as the final response.
 
 
         * **Available Tools:**
@@ -129,13 +129,13 @@ class PlannerAgent:
         **Available Agents:**
         {available_agents if available_agents else "None - ensure agents are running"}
 
-        **Routing Flow (Guardrails skipped for now):**
+        **Routing Flow:**
         1. Receive normalized ticket → Create execution plan
         2. Route to Intent Classification Agent → Get classification
         3. Call invoke_rag_and_memory_parallel(ticket_query, user_id) → Get rag_result and memory_result in parallel
         4. Route to Reasoning Agent with classification + ticket + rag_result + memory_result → Get reasoning analysis
-        5. Route to Response Agent with classification + reasoning + knowledge (RAG + Memory) → Get final response
-        6. Return that response to the user (Guardrails WIP, skipped)
+        5. Route to Response Agent with classification + reasoning + knowledge (RAG + Memory) → Get proposed response
+        6. If Guardrails Agent is available: send the proposed response (with brief context) to Guardrails Agent; return Guardrails Agent output as final response. Otherwise return the Response Agent output as final response.
 
         """
 

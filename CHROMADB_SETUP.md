@@ -41,21 +41,46 @@ After ChromaDB is running, ingest documents:
 python scripts/ingest_rag_data.py
 ```
 
+## Test RAG Integration (after ingest)
+
+1. **Keep ChromaDB running on the host** (same process you used for ingest):
+   ```bash
+   chroma run --host 0.0.0.0 --port 8000
+   ```
+   The RAG agent in Docker connects to it via `host.docker.internal`.
+
+2. **Optional: set `.env`** in the project root so Docker uses the same collection as ingest:
+   ```bash
+   CHROMA_COLLECTION=support-agent-x-openai   # default; only change if you used another name when ingesting
+   ```
+
+3. **Start the stack:**
+   ```bash
+   docker compose up --build
+   ```
+
+4. **Test** via the UI or host agent (e.g. submit a query from the test cases in `testing-docs/TEST_CASES.md`). No other code changes are required.
+
 ## Configuration
 
-Set these environment variables in `.env` or `docker-compose.yml`:
+Set these environment variables in `.env` (or `docker-compose.yml`). Ingest script and RAG agent both read from `.env` so they use the same collection.
 
 ```bash
 # For Docker (RAG agent in container connecting to host)
 CHROMA_HOST=host.docker.internal
 CHROMA_PORT=8000
-CHROMA_COLLECTION=support-agent-x
 
 # For local development (RAG agent on same machine)
 CHROMA_HOST=localhost
 CHROMA_PORT=8000
-CHROMA_COLLECTION=support-agent-x
+
+# Collection name: choose one. Ingest and RAG agent must use the same value.
+# - support-agent-x-openai: when ingest is run via HTTP path (OpenAI 1536-dim). Default.
+# - support-agent-x: when ingest is run with chromadb package (RAG-ingest venv, 384-dim).
+CHROMA_COLLECTION=support-agent-x-openai
 ```
+
+Create `.env` in the project root and add the above (e.g. `CHROMA_COLLECTION=support-agent-x` or `support-agent-x-openai`).
 
 ## Troubleshooting
 

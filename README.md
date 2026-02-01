@@ -201,12 +201,13 @@ support_agents/
 
 ## Environment Variables
 
-See `.env.example` for all configuration options. Key variables:
+Key variables (set in `.env`):
 
+- `CHROMA_COLLECTION`: ChromaDB collection name. Use `support-agent-x-openai` (default, for HTTP/OpenAI ingest) or `support-agent-x` (for chromadb-package ingest). Ingest and RAG agent must use the same value.
+- `CHROMA_HOST`, `CHROMA_PORT`: ChromaDB server (default localhost:8000)
 - `DATABASE_URL`: PostgreSQL connection string
 - `GOOGLE_API_KEY`: Google AI API key
 - `MEMORY_DB_PATH`: Path to Memory Agent SQLite DB
-- `VECTOR_DB_PATH`: Path to ChromaDB storage
 
 ## Testing
 

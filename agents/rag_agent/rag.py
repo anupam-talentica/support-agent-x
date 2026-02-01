@@ -25,7 +25,7 @@ class ChromaRAG:
         self,
         host: str = "localhost",
         port: int = 8000,
-        collection_name: str = "support-agent-x",
+        collection_name: str = "support-agent-x-openai",  # override via CHROMA_COLLECTION in .env
     ):
         """
         Initialize the RAG system.

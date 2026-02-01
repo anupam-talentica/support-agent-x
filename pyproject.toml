@@ -26,6 +26,8 @@ dependencies = [
     # Memory (mem0) - uses ChromaDB from RAG dependencies
     "mem0ai>=0.1.0",
     "openai>=1.0.0",
+    # Observability
+    "langfuse>=3.0.0",
 ]
 
 [project.optional-dependencies]

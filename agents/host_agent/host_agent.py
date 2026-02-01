@@ -29,6 +29,7 @@ from a2a.types import GetTaskRequest, TaskQueryParams
 import asyncio
 
 
+from .observability import span_agent_call, update_current_span
 from .remote_agent_connection import RemoteAgentConnections
 
 
@@ -219,70 +220,73 @@ class HostAgent:
 
         if not client:
             raise ValueError(f'Client not available for {agent_name}')
-        
-        task_id = state.get('task_id')
-        context_id = state.get('context_id', str(uuid.uuid4()))
-        message_id = str(uuid.uuid4())
 
-        payload: dict[str, Any] = {
-            'message': {
-                'role': 'user',
-                'parts': [{'type': 'text', 'text': task}],
-                'messageId': message_id,
-            },
-        }
+        with span_agent_call(agent_name, task_input=task):
+            task_id = state.get('task_id')
+            context_id = state.get('context_id', str(uuid.uuid4()))
+            message_id = str(uuid.uuid4())
 
-        if task_id:
-            payload['message']['taskId'] = task_id
+            payload: dict[str, Any] = {
+                'message': {
+                    'role': 'user',
+                    'parts': [{'type': 'text', 'text': task}],
+                    'messageId': message_id,
+                },
+            }
 
-        if context_id:
-            payload['message']['contextId'] = context_id
+            if task_id:
+                payload['message']['taskId'] = task_id
 
-        message_request = SendMessageRequest(
-            id=message_id, params=MessageSendParams.model_validate(payload)
-        )
-        send_response: SendMessageResponse = await client.send_message(
-            message_request=message_request
-        )
-        logger.debug(
-            'send_response: %s',
-            send_response.model_dump_json(exclude_none=True, indent=2),
-        )
+            if context_id:
+                payload['message']['contextId'] = context_id
 
-        if not isinstance(send_response.root, SendMessageSuccessResponse):
-            logger.error('Received non-success response')
-            return None
-
-        if not isinstance(send_response.root.result, Task):
-            logger.error('Received non-task response')
-            return None
-
-        task = send_response.root.result
-
-        # Wait for task completion and collect artifacts
-        result_parts = []
-        while True:
-            get_request = GetTaskRequest(
-                id=str(uuid.uuid4()),
-                params=TaskQueryParams(id=task.id, historyLength=10)
+            message_request = SendMessageRequest(
+                id=message_id, params=MessageSendParams.model_validate(payload)
             )
-            task_response = await client.agent_client.get_task(get_request)
-            
-            if hasattr(task_response.root, 'result'):
-                current_task = task_response.root.result
-                if current_task.status.state == 'completed':
-                    result_parts = current_task.artifacts or []
-                    break
-                elif current_task.status.state in ['failed', 'canceled']:
-                    break
-            await asyncio.sleep(0.25)
+            send_response: SendMessageResponse = await client.send_message(
+                message_request=message_request
+            )
+            logger.debug(
+                'send_response: %s',
+                send_response.model_dump_json(exclude_none=True, indent=2),
+            )
+            if not isinstance(send_response.root, SendMessageSuccessResponse):
+                logger.error('Received non-success response')
+                return None
 
-        # Extract text from artifacts (parts may be Part(root=TextPart(...)) or bare TextPart)
-        result_text = ''
-        for artifact in result_parts:
-            if hasattr(artifact, 'parts'):
-                for part in artifact.parts:
-                    part_root = getattr(part, 'root', part)
-                    result_text += (getattr(part_root, 'text', '') or '') + '\n'
+            if not isinstance(send_response.root.result, Task):
+                logger.error('Received non-task response')
+                return None
 
-        return {'result': result_text if result_text else 'Task completed'}
+            task = send_response.root.result
+
+            # Wait for task completion and collect artifacts
+            result_parts = []
+            while True:
+                get_request = GetTaskRequest(
+                    id=str(uuid.uuid4()),
+                    params=TaskQueryParams(id=task.id, historyLength=10)
+                )
+                task_response = await client.agent_client.get_task(get_request)
+
+                if hasattr(task_response.root, 'result'):
+                    current_task = task_response.root.result
+                    if current_task.status.state == 'completed':
+                        result_parts = current_task.artifacts or []
+                        break
+                    elif current_task.status.state in ['failed', 'canceled']:
+                        break
+                await asyncio.sleep(0.5)
+
+            # Extract text from artifacts (parts may be Part(root=TextPart(...)) or bare TextPart)
+            result_text = ''
+            for artifact in result_parts:
+                if hasattr(artifact, 'parts'):
+                    for part in artifact.parts:
+                        part_root = getattr(part, 'root', part)
+                        result_text += (getattr(part_root, 'text', '') or '') + '\n'
+
+            update_current_span(
+                output={"result_preview": (result_text or "Task completed")[:1000], "artifact_count": len(result_parts)}
+            )
+            return {'result': result_text if result_text else 'Task completed'}

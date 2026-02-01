@@ -5,6 +5,7 @@ A production-grade multi-agent support system built with A2A protocol, featuring
 ## Architecture
 
 The system consists of 8 specialized agents:
+
 1. **Ingestion Agent** - Normalizes incoming tickets and queries
 2. **Planner Agent** - Orchestrates execution strategy (serial/parallel/async)
 3. **Intent & Classification Agent** - Detects intent, urgency, SLA risk
@@ -19,10 +20,12 @@ The system consists of 8 specialized agents:
 The system uses **three separate databases**:
 
 1. **Application Database (PostgreSQL)**: Tickets, sessions, tasks, metrics
+
    - Location: PostgreSQL container (docker-compose)
    - Managed by: `database/` module
 
 2. **Memory Database (SQLite)**: Memory Agent's three memory types
+
    - Location: `data/memory.db`
    - Managed by: `agents/memory_agent/memory_db.py`
 
@@ -33,28 +36,33 @@ The system uses **three separate databases**:
 ## Quick Start with Docker
 
 ### Prerequisites
+
 - Docker and Docker Compose installed
 - Google API key (for LLM)
 
 ### Setup
 
 1. **Clone and navigate to project**:
+
    ```bash
    cd support_agents
    ```
 
 2. **Create `.env` file**:
+
    ```bash
    cp .env.example .env
    # Edit .env and add your GOOGLE_API_KEY
    ```
 
 3. **Start with Docker Compose**:
+
    ```bash
    docker-compose up --build
    ```
 
    This will:
+
    - Start PostgreSQL database
    - Initialize database schema
    - Seed test data
@@ -66,9 +74,14 @@ The system uses **three separate databases**:
    - Host Agent: http://localhost:8083
    - Individual agents: http://localhost:10001-10008
 
+## Observability (Langfuse)
+
+The Host Agent can send traces to [Langfuse](https://langfuse.com/docs) so you can see how each request progresses through the orchestrator (Ingestion → Planner → …). Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in `.env` to enable; if unset, the app runs without observability. See [agents/host_agent/OBSERVABILITY.md](agents/host_agent/OBSERVABILITY.md) for setup and usage.
+
 ## Local Development Setup
 
 ### Prerequisites
+
 - Python 3.13+
 - PostgreSQL 16+ (or use Docker for PostgreSQL only)
 - uv package manager (recommended) or pip
@@ -76,6 +89,7 @@ The system uses **three separate databases**:
 ### Setup
 
 1. **Install dependencies**:
+
    ```bash
    uv pip install -r pyproject.toml
    # OR
@@ -83,33 +97,37 @@ The system uses **three separate databases**:
    ```
 
 2. **Start PostgreSQL** (if not using Docker):
+
    ```bash
    docker-compose up postgres -d
    ```
 
 3. **Start ChromaDB Server** (required for RAG agent):
+
    ```bash
    # Start ChromaDB listening on all interfaces (required for Docker)
    chroma run --host 0.0.0.0 --port 8000
    ```
 
 4. **Initialize databases**:
+
    ```bash
    # Application database
    python scripts/init_db.py --seed
-   
+
    # Memory database
    python agents/memory_agent/scripts/init_memory_db.py
    ```
-   
+
    **Note:** ChromaDB must be started with `--host 0.0.0.0` (not `localhost` or `127.0.0.1`) to allow Docker containers to connect via `host.docker.internal`.
 
 5. **Start agents**:
+
    ```bash
    # Option 1: Use script
    chmod +x scripts/start_all_agents.sh
    ./scripts/start_all_agents.sh
-   
+
    # Option 2: Start individually
    python -m agents.host_agent.__main__
    python -m agents.ingestion_agent.__main__
@@ -124,6 +142,7 @@ The system uses **three separate databases**:
 ## Database Management
 
 ### Initialize Database
+
 ```bash
 # Application database
 python scripts/init_db.py --seed
@@ -133,6 +152,7 @@ python agents/memory_agent/scripts/init_memory_db.py
 ```
 
 ### Database Migrations (Alembic)
+
 ```bash
 # Create migration
 alembic revision --autogenerate -m "Description"
@@ -145,7 +165,9 @@ alembic downgrade -1
 ```
 
 ### Database Connection
+
 The application uses PostgreSQL by default. Connection string:
+
 ```
 postgresql://support_user:support_pass@localhost:5432/support_agents_db
 ```
@@ -153,6 +175,7 @@ postgresql://support_user:support_pass@localhost:5432/support_agents_db
 Set `DATABASE_URL` in `.env` to customize.
 
 ### ChromaDB Setup
+
 ChromaDB is required for the RAG agent. Start it with:
 
 ```bash
@@ -163,6 +186,7 @@ chroma run --host 0.0.0.0 --port 8000
 **Important:** Use `--host 0.0.0.0` (not `localhost` or `127.0.0.1`) to allow Docker containers to connect.
 
 After starting ChromaDB, ingest documents:
+
 ```bash
 python scripts/ingest_rag_data.py
 ```
@@ -231,16 +255,19 @@ pytest tests/test_memory.py
 ## Troubleshooting
 
 ### Database Connection Issues
+
 - Ensure PostgreSQL is running: `docker-compose ps`
 - Check connection string in `.env`
 - Verify database exists: `psql -U support_user -d support_agents_db`
 
 ### Agent Not Starting
+
 - Check port availability: `lsof -i :PORT`
 - Verify environment variables are loaded
 - Check agent logs for errors
 
 ### Memory Not Persisting
+
 - Verify `data/memory.db` file exists and is writable
 - Check Memory Agent database initialization
 

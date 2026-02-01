@@ -35,6 +35,7 @@ RUN uv pip install --system \
     python-dotenv>=1.0.0 \
     click>=8.2.0 \
     mem0ai>=0.1.0
+    langfuse>=3.0.0
 
 # Install RAG dependencies
 RUN uv pip install --system \

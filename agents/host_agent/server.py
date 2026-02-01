@@ -11,6 +11,8 @@ import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+
+from agents.guardrails_agent import validate_input_with_llm, apply_output_guardrail
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -133,6 +135,22 @@ def get_api_router() -> APIRouter:
         if not host_agent_instance or not runner_instance or not session_service:
             raise HTTPException(status_code=503, detail="Host agent not initialized")
 
+        # Input guardrail: rule-based + LLM classification
+        guardrail = await validate_input_with_llm(request.message)
+        if not guardrail.success:
+            # Return 200 with reason in response so the client can show it (no "bad request" error)
+            message_id = str(uuid.uuid4())
+            conversation_id = request.conversation_id or str(uuid.uuid4())
+            return SendMessageResponse(
+                success=False,
+                message_id=message_id,
+                conversation_id=conversation_id,
+                response=guardrail.message,
+                status="rejected",
+                agents_used=[],
+            )
+        message_text = guardrail.sanitized_text or request.message
+
         # Generate IDs
         message_id = str(uuid.uuid4())
         conversation_id = request.conversation_id or str(uuid.uuid4())
@@ -158,9 +176,9 @@ def get_api_router() -> APIRouter:
                     session_id=conversation_id,
                 )
 
-            # Create the message content
+            # Create the message content (using guardrail-sanitized text)
             content = types.Content(
-                parts=[types.Part.from_text(text=request.message)],
+                parts=[types.Part.from_text(text=message_text)],
                 role='user'
             )
 
@@ -209,8 +227,10 @@ def get_api_router() -> APIRouter:
                     agents_used=agents_used,
                 )
 
-            # Combine all response parts
+            # Combine all response parts and apply output guardrail (redact sensitive data)
             response_text = '\n'.join(response_parts) if response_parts else 'No response generated'
+            output_result = apply_output_guardrail(response_text)
+            response_text = output_result.redacted_text
             update_current_span(
                 output={"response_preview": response_text[:500], "status": status, "agents_used": agents_used},
                 metadata={"agents_used": agents_used},
@@ -245,6 +265,19 @@ def get_api_router() -> APIRouter:
         conv_id = conversation_id or str(uuid.uuid4())
         message_id = str(uuid.uuid4())
 
+        # Input guardrail for stream endpoint (rule-based + LLM)
+        guardrail = await validate_input_with_llm(message)
+        if not guardrail.success:
+            # Return a short stream with the reason so the client gets it in the same "message" event (no 400)
+            async def guardrail_stream() -> AsyncGenerator[str, None]:
+                yield f"event: message\ndata: {json.dumps({'success': False, 'message_id': message_id, 'conversation_id': conv_id, 'response': guardrail.message, 'status': 'rejected', 'agents_used': []})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'conversation_id': conv_id})}\n\n"
+            return StreamingResponse(
+                guardrail_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            )
+        message_text = guardrail.sanitized_text or message
         async def event_generator() -> AsyncGenerator[str, None]:
             with trace_request(
                 name="rest-chat-stream",
@@ -266,9 +299,9 @@ def get_api_router() -> APIRouter:
                         session_id=conv_id,
                     )
 
-                # Create the message content
+                # Create the message content (using guardrail-sanitized text)
                 content = types.Content(
-                    parts=[types.Part.from_text(text=message)],
+                    parts=[types.Part.from_text(text=message_text)],
                     role='user'
                 )
 
@@ -299,18 +332,21 @@ def get_api_router() -> APIRouter:
                                     if part.text:
                                         yield f"event: status\ndata: {json.dumps({'status': 'working', 'message': part.text[:200]})}\n\n"
                         else:
-                            # Final response - send the message event
+                            # Final response - apply output guardrail then send the message event
                             response_text = ''
                             if event.content and event.content.parts:
                                 for part in event.content.parts:
                                     if part.text:
                                         response_text += part.text + '\n'
+                            response_text = response_text.strip()
+                            output_result = apply_output_guardrail(response_text)
+                            response_text = output_result.redacted_text
 
                             final_response = {
                                 'success': True,
                                 'message_id': message_id,
                                 'conversation_id': conv_id,
-                                'response': response_text.strip(),
+                                'response': response_text,
                                 'status': 'completed',
                                 'agents_used': agents_used,
                             }

@@ -116,7 +116,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       CHROMA_HOST: ${CHROMA_HOST:-host.docker.internal}
       CHROMA_PORT: ${CHROMA_PORT:-8000}
-      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-support-agent-x}
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-support-agent-x-openai}
       APP_URL: http://rag_agent:10012
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -168,6 +168,7 @@ services:
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
@@ -212,6 +213,7 @@ services:
     environment:
       DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
       GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}

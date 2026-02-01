@@ -14,7 +14,8 @@ class RagAgent:
         # ChromaDB server should be running separately
         chroma_host = os.getenv('CHROMA_HOST', 'localhost')
         chroma_port = int(os.getenv('CHROMA_PORT', '8000'))
-        collection_name = os.getenv('CHROMA_COLLECTION', 'support-agent-x')
+        # Collection name from .env: support-agent-x (chromadb default 384-dim) or support-agent-x-openai (HTTP ingest 1536-dim)
+        collection_name = os.getenv('CHROMA_COLLECTION', 'support-agent-x-openai')
         
         logger.info(f"Initializing RAG Agent with ChromaDB at {chroma_host}:{chroma_port}, collection: {collection_name}")
         

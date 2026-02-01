@@ -74,6 +74,33 @@ services:
     command: python -m agents.intent_agent.__main__ --host 0.0.0.0 --port 10003
     restart: unless-stopped
 
+  # Reasoning Agent - Port 10014
+  reasoning_agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: support_agents_reasoning
+    environment:
+      DATABASE_URL: postgresql://support_user:support_pass@postgres:5432/support_agents_db
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-FALSE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
+      APP_URL: http://reasoning_agent:10014
+    ports:
+      - "10014:10014"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - support_agents_network
+    command: python -m agents.reasoning_agent.__main__ --host 0.0.0.0 --port 10014
+    restart: unless-stopped
+
   # RAG Agent - Port 10012
   rag_agent:
     build:
@@ -132,7 +159,7 @@ services:
     restart: unless-stopped
 
   # Planner Agent - Port 10002
-  # Depends on Intent, RAG, and Response agents being ready
+  # Depends on Intent, Reasoning, RAG, and Response agents being ready
   planner_agent:
     build:
       context: .
@@ -146,6 +173,7 @@ services:
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
       LITELLM_MODEL: ${LITELLM_MODEL:-openai/gpt-4.1-mini}
       INTENT_AGENT_URL: http://intent_agent:10003
+      REASONING_AGENT_URL: http://reasoning_agent:10014
       RAG_AGENT_URL: http://rag_agent:10012
       RESPONSE_AGENT_URL: http://response_agent:10007
       APP_URL: http://planner_agent:10002
@@ -158,6 +186,8 @@ services:
         condition: service_healthy
       intent_agent:
         condition: service_started
+      reasoning_agent:
+        condition: service_started
       rag_agent:
         condition: service_started
       response_agent:
@@ -166,7 +196,7 @@ services:
       - support_agents_network
     command: >
       sh -c "
-        echo 'Waiting for Intent, RAG, and Response agents to be ready...' &&
+        echo 'Waiting for Intent, Reasoning, RAG, and Response agents to be ready...' &&
         sleep 5 &&
         python -m agents.planner_agent.__main__ --host 0.0.0.0 --port 10002
       "

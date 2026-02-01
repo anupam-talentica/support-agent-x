@@ -23,6 +23,8 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "click>=8.2.0",
+    # Observability
+    "langfuse>=3.0.0",
 ]
 
 [project.optional-dependencies]

@@ -3,9 +3,14 @@
  * Provides real-time status updates as the agent processes requests through multiple sub-agents.
  */
 
+import { userService } from "@/services/userService";
+
 // Configuration - update this to match your backend URL
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8083";
+
+/** Header sent to backend for Langfuse user tracing (mobile number). */
+const USER_PHONE_HEADER = "X-User-Phone";
 
 /** Maps agent names (from backend) to user-facing generic status messages. Agent names are never shown. */
 const AGENT_TO_GENERIC_STATUS: Record<string, string> = {
@@ -51,9 +56,15 @@ async function sendMessageWithSSE(
     params.append("conversation_id", currentConversationId);
   }
 
+  const headers: Record<string, string> = { Accept: "text/event-stream" };
+  const userPhone = userService.getCurrentUser()?.phone;
+  if (userPhone) {
+    headers[USER_PHONE_HEADER] = userPhone;
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/chat/stream?${params.toString()}`,
-    { headers: { Accept: "text/event-stream" } }
+    { headers }
   );
 
   if (!response.ok) {
@@ -144,11 +155,17 @@ async function sendMessageWithSSE(
  * Use this if SSE is not available or for simpler integration.
  */
 async function sendMessageHttp(message: string): Promise<SendMessageResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const userPhone = userService.getCurrentUser()?.phone;
+  if (userPhone) {
+    headers[USER_PHONE_HEADER] = userPhone;
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
       message,
       conversation_id: currentConversationId,
@@ -236,9 +253,9 @@ export const chatService = {
       return await sendMessageWithSSE(message, onStatusChange);
     } catch (error) {
       console.error("SSE failed, falling back to HTTP:", error);
-      // Fallback to HTTP if SSE fails
-      onStatusChange?.("Processing...");
-      return await sendMessageHttp(message);
+      // // Fallback to HTTP if SSE fails
+      // onStatusChange?.("Processing...");
+      // return await sendMessageHttp(message);
     }
   },
 

@@ -8,7 +8,7 @@ import click
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from a2a.server.apps import A2AStarletteApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -26,6 +26,7 @@ from google.adk.sessions import InMemorySessionService
 
 from .host_agent import HostAgent
 from .host_executor import HostExecutor
+from .observability import log_status as log_langfuse_status
 from .server import get_api_router, set_dependencies
 
 
@@ -161,10 +162,23 @@ def main(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
             "agents": agent_names,
         })
 
+    _FAVICON_SVG = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">'
+        '<rect width="32" height="32" rx="6" fill="#1e293b"/>'
+        '<path d="M8 8l7 8-7 8h3l5.5-6L22 24h3l-7-8 7-8h-3l-5.5 6L11 8H8z" fill="#facc15"/>'
+        '<circle cx="22" cy="10" r="2.5" fill="#facc15" opacity="0.95"/>'
+        '</svg>'
+    )
+
+    @main_app.get("/favicon.ico")
+    async def favicon_handler():
+        return Response(content=_FAVICON_SVG, media_type="image/svg+xml")
+
     main_app.include_router(get_api_router(), prefix="/api")
     main_app.mount("/", a2a_starlette)
 
-    # Log startup information
+    # Log startup information (and init Langfuse so status appears in logs)
+    log_langfuse_status()
     logger.info(f"Starting Host Agent server on {host}:{port}")
     logger.info(f"  - REST API: http://{host}:{port}/api/chat")
     logger.info(f"  - SSE Stream: http://{host}:{port}/api/chat/stream")

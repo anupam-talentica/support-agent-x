@@ -189,6 +189,10 @@ services:
       INGESTION_AGENT_URL: http://ingestion_agent:10001
       PLANNER_AGENT_URL: http://planner_agent:10002
       APP_URL: http://host_agent:8083
+      # Langfuse observability (optional; leave unset to disable)
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
     ports:
       - "8083:8083"
     volumes:

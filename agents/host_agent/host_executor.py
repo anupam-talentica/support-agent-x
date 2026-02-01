@@ -25,6 +25,8 @@ from database.services import TaskService
 from google.adk import Runner
 from google.genai import types
 
+from .observability import trace_request, update_current_span
+
 
 if TYPE_CHECKING:
     from google.adk.sessions.session import Session
@@ -58,68 +60,89 @@ class HostExecutor(AgentExecutor):
         # Track this session as active
         self._active_sessions.add(session_id)
 
-        try:
-            async for event in self.runner.run_async(
-                user_id=DEFAULT_USER_ID,
-                session_id=session_id,
-                new_message=new_message,
-            ):
-                logger.debug(
-                    '### Event received: %s',
-                    event.model_dump_json(exclude_none=True, indent=2),
-                )
-
-                if event.is_final_response():
-                    parts = [
-                        convert_genai_part_to_a2a(part)
-                        for part in event.content.parts
-                        if (part.text or part.file_data or part.inline_data)
-                    ]
-
-                    # Update task in database
-                    if hasattr(task_updater, 'task_id') and task_updater.task_id:
-                        try:
-                            with get_db() as db:
-                                response_text = ''
-                                if parts and isinstance(parts[0], TextPart):
-                                    response_text = parts[0].text
-                                
-                                TaskService.update_task_status(
-                                    db,
-                                    task_id=task_updater.task_id,
-                                    status='completed',
-                                    output_data={'response': response_text},
-                                )
-                                logger.info(f'Updated task {task_updater.task_id} in database')
-                        except Exception as e:
-                            logger.error(f'Failed to update task in database: {e}')
-
-                    logger.debug('#### Yielding final response: %s', parts)
-                    await task_updater.add_artifact(parts)
-
-                    await task_updater.update_status(
-                        TaskState.completed, final=True
-                    )
-
+        message_preview = ""
+        if new_message.parts:
+            for p in new_message.parts:
+                if getattr(p, "text", None):
+                    message_preview = (message_preview + " " + p.text).strip()[:2000]
                     break
-                if not event.get_function_calls():
-                    parts = [
-                        convert_genai_part_to_a2a(part)
-                        for part in event.content.parts
-                        if (part.text or part.file_data or part.inline_data)
-                    ]
 
-                    logger.debug('#### Yielding update response: %s', parts)
-                    await task_updater.update_status(
-                        TaskState.working,
-                        message=task_updater.new_agent_message(parts),
+        with trace_request(
+            name="a2a-execute",
+            session_id=session_id,
+            user_id=DEFAULT_USER_ID,
+            input_data={"message_preview": message_preview},
+            metadata={"source": "a2a", "session_id": session_id},
+        ):
+            try:
+                async for event in self.runner.run_async(
+                    user_id=DEFAULT_USER_ID,
+                    session_id=session_id,
+                    new_message=new_message,
+                ):
+                    logger.debug(
+                        '### Event received: %s',
+                        event.model_dump_json(exclude_none=True, indent=2),
                     )
-                else:
-                    logger.debug('#### Event - Function Calls')
 
-        finally:
-            # Remove from active sessions when done
-            self._active_sessions.discard(session_id)
+                    if event.is_final_response():
+                        parts = [
+                            convert_genai_part_to_a2a(part)
+                            for part in event.content.parts
+                            if (part.text or part.file_data or part.inline_data)
+                        ]
+
+                        # Update task in database
+                        if hasattr(task_updater, 'task_id') and task_updater.task_id:
+                            try:
+                                with get_db() as db:
+                                    response_text = ''
+                                    if parts and isinstance(parts[0], TextPart):
+                                        response_text = parts[0].text
+
+                                    TaskService.update_task_status(
+                                        db,
+                                        task_id=task_updater.task_id,
+                                        status='completed',
+                                        output_data={'response': response_text},
+                                    )
+                                    logger.info(f'Updated task {task_updater.task_id} in database')
+                            except Exception as e:
+                                logger.error(f'Failed to update task in database: {e}')
+
+                        logger.debug('#### Yielding final response: %s', parts)
+                        await task_updater.add_artifact(parts)
+
+                        await task_updater.update_status(
+                            TaskState.completed, final=True
+                        )
+
+                        response_preview = ''
+                        if parts and isinstance(parts[0], TextPart):
+                            response_preview = (parts[0].text or '')[:500]
+                        update_current_span(
+                            output={"status": "completed", "response_preview": response_preview},
+                        )
+                        break
+                    if not event.get_function_calls():
+                        parts = [
+                            convert_genai_part_to_a2a(part)
+                            for part in event.content.parts
+                            if (part.text or part.file_data or part.inline_data)
+                        ]
+
+                        logger.debug('#### Yielding update response: %s', parts)
+                        await task_updater.update_status(
+                            TaskState.working,
+                            message=task_updater.new_agent_message(parts),
+                        )
+                    else:
+                        logger.debug('#### Event - Function Calls')
+            except Exception as e:
+                update_current_span(output={"status": "failed", "error": str(e)})
+            finally:
+                # Remove from active sessions when done
+                self._active_sessions.discard(session_id)
 
     async def execute(
         self,

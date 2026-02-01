@@ -33,7 +33,8 @@ RUN uv pip install --system \
     mesop>=0.1.0 \
     httpx>=0.27.0 \
     python-dotenv>=1.0.0 \
-    click>=8.2.0
+    click>=8.2.0 \
+    langfuse>=3.0.0
 
 # Install RAG dependencies
 RUN uv pip install --system \

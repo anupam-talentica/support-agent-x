@@ -80,8 +80,14 @@ class PlannerExecutor(AgentExecutor):
                         try:
                             with get_db() as db:
                                 response_text = ''
-                                if parts and isinstance(parts[0].root, TextPart):
-                                    response_text = parts[0].root.text
+                                if parts:
+                                    first = parts[0]
+                                    if isinstance(first, TextPart):
+                                        response_text = first.text
+                                    elif hasattr(first, 'root') and isinstance(first.root, TextPart):
+                                        response_text = first.root.text
+                                    else:
+                                        response_text = getattr(first, 'text', '') or ''
                                 
                                 # Get execution plan from agent state if available
                                 execution_plan = None
@@ -97,8 +103,13 @@ class PlannerExecutor(AgentExecutor):
                                     logger.debug(f'Could not retrieve execution plan from session: {e}')
                                 
                                 output_data = {'response': response_text}
-                                if execution_plan:
-                                    output_data['execution_plan'] = execution_plan
+                                if execution_plan and isinstance(execution_plan, dict):
+                                    safe_plan = {
+                                        k: v for k, v in execution_plan.items()
+                                        if k in ('description', 'agent_sequence') and isinstance(v, (str, type(None)))
+                                    }
+                                    if safe_plan:
+                                        output_data['execution_plan'] = safe_plan
                                 
                                 TaskService.update_task_status(
                                     db,

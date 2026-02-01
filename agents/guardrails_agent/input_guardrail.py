@@ -156,6 +156,11 @@ async def validate_input_with_llm(
     to classify the message (prompt injection, off-topic, harmful, etc.). Async so
     it can be awaited from API handlers.
 
+    This is the single input guardrail. It is invoked at the Host (first agent) for
+    both REST (/api/chat, /api/chat/stream) and A2A so off-topic/rejected messages
+    never reach Ingestion or Planner. For faster rejection latency, use a smaller
+    model or lower GUARDRAIL_LLM_TIMEOUT in llm_guardrail.
+
     Args:
         text: Raw user input.
         max_length: Maximum allowed character length.

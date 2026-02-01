@@ -84,6 +84,9 @@ class PlannerAgent:
             tools=[
                 self.send_message,
                 self.create_execution_plan,
+                self.invoke_rag_and_memory_parallel,
+                self.search_similar_tickets,
+                self.store_ticket_resolution,
             ],
         )
 
@@ -96,19 +99,30 @@ class PlannerAgent:
         **Core Directives:**
 
         * **Execution Planning:** Analyze the normalized ticket information and create an execution plan that determines:
-          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Response Synthesis)
+
+          1. Which agents need to be invoked (Intent Classification, RAG Knowledge Retrieval, Memory, Reasoning/Correlation, Response Synthesis)
           2. The sequence of agent invocations
-          3. Any parallel or async operations
+          3. Parallel execution: use `invoke_rag_and_memory_parallel` so RAG and Memory run simultaneously after Intent
+
 
         * **Fixed Routing Sequence:** Always route tickets in this exact order:
-          1. First, send the ticket to the "Intent Classification Agent" for classification
-          2. Then, send the classification result AND original ticket to the "Reasoning Agent" for fact analysis and reasoning
-          3. Then, send the ticket query to the "RAG Agent" to retrieve relevant knowledge from documents
-          4. Finally, send the classification, reasoning analysis, and retrieved knowledge to the "Response Agent" to generate a human-readable response
+          1. First, send the ticket to the "Intent Classification Agent" (or "Intent & Classification Agent") for classification
+          2. Then, call `invoke_rag_and_memory_parallel(ticket_query, user_id)` to get RAG knowledge and Memory (similar tickets) in one parallel call. Use the normalized ticket text as ticket_query and an appropriate user_id (e.g. from ticket or 'all_users').
+          3. Then, send the classification result, original ticket, RAG result (from rag_result), and Memory result (from memory_result) to the "Reasoning Agent" (Reasoning/Correlation) for fact analysis and correlation
+          4. Then, send the classification, reasoning analysis, and retrieved knowledge (RAG + Memory) to the "Response Agent" (Response Synthesis) to generate a human-readable response
+          5. If "Guardrails Agent" is in the available agents, send the Response Agent output (with brief context: ticket summary, that RAG/Memory were used) to the "Guardrails Agent" for safety and confidence check; return whatever the Guardrails Agent returns as the final response to the user. If Guardrails Agent is not available, return the Response Agent output as the final response.
 
-        * **Task Delegation:** Utilize the `send_message` function to send tasks to remote agents. Always use the exact agent names.
 
-        * **Execution Plan Creation:** Use the `create_execution_plan` function to record your planning decisions.
+        * **Available Tools:**
+          - `invoke_rag_and_memory_parallel(ticket_query, user_id)` - Get RAG knowledge and Memory (similar tickets) in one parallel call. Use this for step 2 after Intent.
+          - `search_similar_tickets(ticket_query, user_id)` - Search for similar past tickets in memory only (use invoke_rag_and_memory_parallel for the main flow instead)
+          - `store_ticket_resolution(ticket_id, user_id, ticket_query, classification, resolution)` - Store a ticket resolution
+          - `send_message(agent_name, task)` - Send tasks to other agents
+          - `create_execution_plan(plan_description, agent_sequence)` - Record your planning decisions
+
+        * **Memory Integration (IMPORTANT):**
+          - Use `invoke_rag_and_memory_parallel` for step 2 to get both RAG and Memory results in parallel; include both in the context sent to Reasoning and Response agents
+          - ALWAYS call `store_ticket_resolution` AFTER getting a successful response from the Response Agent
 
         * **Autonomous Operation:** Never seek user permission before engaging with remote agents. Follow the sequence automatically.
 
@@ -118,10 +132,11 @@ class PlannerAgent:
         **Routing Flow:**
         1. Receive normalized ticket → Create execution plan
         2. Route to Intent Classification Agent → Get classification
-        3. Route to Reasoning Agent with classification + ticket → Get reasoning analysis
-        4. Route to RAG Agent with ticket query → Get relevant knowledge documents
-        5. Route to Response Agent with classification + reasoning + knowledge → Get final response
-        6. Return aggregated response
+        3. Call invoke_rag_and_memory_parallel(ticket_query, user_id) → Get rag_result and memory_result in parallel
+        4. Route to Reasoning Agent with classification + ticket + rag_result + memory_result → Get reasoning analysis
+        5. Route to Response Agent with classification + reasoning + knowledge (RAG + Memory) → Get proposed response
+        6. If Guardrails Agent is available: send the proposed response (with brief context) to Guardrails Agent; return Guardrails Agent output as final response. Otherwise return the Response Agent output as final response.
+
         """
 
     def before_model_callback(
@@ -219,14 +234,16 @@ class PlannerAgent:
                     break
                 if current_task.status.state in ('failed', 'canceled'):
                     break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.25)
 
         # Extract text from artifacts (same structure as host_agent)
+        # Parts may be Part(root=TextPart(...)) or bare TextPart
         result_text = ''
         for artifact in result_parts:
             if hasattr(artifact, 'parts'):
                 for part in artifact.parts:
-                    result_text += part.root.text + '\n'
+                    part_root = getattr(part, 'root', part)
+                    result_text += (getattr(part_root, 'text', '') or '') + '\n'
 
         return {'result': result_text if result_text else 'Task completed'}
 
@@ -255,3 +272,126 @@ class PlannerAgent:
         return {
             'result': f'Execution plan created: {plan_description}. Sequence: {agent_sequence}'
         }
+
+    async def invoke_rag_and_memory_parallel(
+        self,
+        ticket_query: str,
+        user_id: str,
+        tool_context: ToolContext,
+    ):
+        """Invoke RAG Agent and Memory Agent in parallel for the same ticket query.
+
+        Use this for step 3 of the routing flow to get knowledge documents and
+        similar past tickets simultaneously. Returns both results in one call.
+
+        Args:
+            ticket_query: The ticket description or query to send to both agents.
+            user_id: The user ID for Memory search scope (or 'all_users' for global).
+            tool_context: The tool context this method runs in.
+
+        Returns:
+            A dict with 'rag_result' and 'memory_result' from both agents.
+        """
+        rag_name = 'RAG Agent'
+        memory_name = 'Memory Agent'
+        has_rag = rag_name in self.remote_agent_connections
+        has_memory = memory_name in self.remote_agent_connections
+
+        if not has_rag and not has_memory:
+            logger.warning('Neither RAG nor Memory agent connected')
+            return {
+                'rag_result': {'result': 'RAG Agent not available'},
+                'memory_result': {'result': 'Memory Agent not available'},
+            }
+
+        rag_task = f"Retrieve relevant knowledge for this ticket: {ticket_query}"
+        memory_task = (
+            f"Find similar past tickets for this issue: {ticket_query}. User ID: {user_id}"
+        )
+
+        async def run_rag():
+            if not has_rag:
+                return {'result': 'RAG Agent not available'}
+            return await self.send_message(rag_name, rag_task, tool_context)
+
+        async def run_memory():
+            if not has_memory:
+                return {'result': 'Memory Agent not available'}
+            return await self.send_message(memory_name, memory_task, tool_context)
+
+        rag_result, memory_result = await asyncio.gather(run_rag(), run_memory())
+
+        state = tool_context.state
+        state['active_agent'] = 'RAG and Memory (parallel)'
+
+        logger.info('RAG and Memory parallel invocation completed')
+        return {'rag_result': rag_result, 'memory_result': memory_result}
+
+    async def search_similar_tickets(
+        self,
+        ticket_query: str,
+        user_id: str,
+        tool_context: ToolContext,
+    ):
+        """Search for similar past tickets using the Memory Agent.
+
+        Call this BEFORE processing a new ticket to find relevant past context.
+
+        Args:
+            ticket_query: The current ticket description to search for similar issues.
+            user_id: The user ID to scope the search (or 'all_users' for global search).
+            tool_context: The tool context this method runs in.
+
+        Returns:
+            Similar past tickets with their resolutions if found.
+        """
+        if 'Memory Agent' not in self.remote_agent_connections:
+            logger.warning('Memory Agent not connected - skipping memory search')
+            return {'result': 'Memory Agent not available', 'similar_tickets': []}
+        
+        memory_task = f"Find similar past tickets for this issue: {ticket_query}. User ID: {user_id}"
+        result = await self.send_message('Memory Agent', memory_task, tool_context)
+        
+        logger.info(f'Memory search completed for user {user_id}')
+        return result
+
+    async def store_ticket_resolution(
+        self,
+        ticket_id: str,
+        user_id: str,
+        ticket_query: str,
+        classification: str,
+        resolution: str,
+        tool_context: ToolContext,
+    ):
+        """Store a ticket resolution in the Memory Agent for future reference.
+
+        Call this AFTER successfully resolving a ticket to save the resolution.
+
+        Args:
+            ticket_id: The ticket ID being resolved.
+            user_id: The user ID who submitted the ticket.
+            ticket_query: The original ticket description.
+            classification: The ticket classification (intent, urgency, etc.).
+            resolution: The resolution provided to the user.
+            tool_context: The tool context this method runs in.
+
+        Returns:
+            Confirmation that the resolution was stored.
+        """
+        if 'Memory Agent' not in self.remote_agent_connections:
+            logger.warning('Memory Agent not connected - skipping resolution storage')
+            return {'result': 'Memory Agent not available - resolution not stored'}
+        
+        memory_task = (
+            f"Store this ticket resolution for future reference:\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"User ID: {user_id}\n"
+            f"Original Issue: {ticket_query}\n"
+            f"Classification: {classification}\n"
+            f"Resolution: {resolution}"
+        )
+        result = await self.send_message('Memory Agent', memory_task, tool_context)
+        
+        logger.info(f'Stored resolution for ticket {ticket_id}')
+        return result

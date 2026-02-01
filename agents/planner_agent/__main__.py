@@ -40,9 +40,11 @@ def _get_initialized_planner_agent_sync():
         planner_agent_instance = await PlannerAgent.create(
             remote_agent_addresses=[
                 os.getenv('INTENT_AGENT_URL', 'http://localhost:10003'),
+                os.getenv('MEMORY_AGENT_URL', 'http://localhost:10005'),
                 os.getenv('REASONING_AGENT_URL', 'http://localhost:10014'),
                 os.getenv('RAG_AGENT_URL', 'http://localhost:10012'),
                 os.getenv('RESPONSE_AGENT_URL', 'http://localhost:10007'),
+                os.getenv('GUARDRAILS_AGENT_URL', 'http://localhost:10008'),
             ]
         )
         return planner_agent_instance.create_agent()

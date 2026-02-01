@@ -250,7 +250,6 @@ class HostAgent:
                 'send_response: %s',
                 send_response.model_dump_json(exclude_none=True, indent=2),
             )
-
             if not isinstance(send_response.root, SendMessageSuccessResponse):
                 logger.error('Received non-success response')
                 return None
@@ -279,12 +278,13 @@ class HostAgent:
                         break
                 await asyncio.sleep(0.5)
 
-            # Extract text from artifacts
+            # Extract text from artifacts (parts may be Part(root=TextPart(...)) or bare TextPart)
             result_text = ''
             for artifact in result_parts:
                 if hasattr(artifact, 'parts'):
                     for part in artifact.parts:
-                        result_text += part.root.text + '\n'
+                        part_root = getattr(part, 'root', part)
+                        result_text += (getattr(part_root, 'text', '') or '') + '\n'
 
             update_current_span(
                 output={"result_preview": (result_text or "Task completed")[:1000], "artifact_count": len(result_parts)}

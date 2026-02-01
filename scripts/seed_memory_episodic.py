@@ -41,7 +41,7 @@ def main() -> None:
                 outcome=inc.get('outcome', 'resolved'),
                 tags=inc.get('tags'),
                 user_id=inc.get('user_id'),
-                metadata=inc.get('metadata'),
+                extra_metadata=inc.get('metadata'),
             )
             db.add(record)
             print(f'Added: {inc["incident_id"]}')
